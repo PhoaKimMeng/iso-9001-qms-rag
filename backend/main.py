@@ -229,6 +229,14 @@ def trigger_ingest(
     provider: str = "gemini"
 ):
     """Triggers the PDF standard extraction, chunking, and embedding creation on selected provider."""
+    # Check if the ISO 9001 PDF standard file exists in the workspace
+    workspace_pdf_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "ISO-9001-2015-Fifth-Edition.pdf"))
+    if not os.path.exists(workspace_pdf_path):
+        raise HTTPException(
+            status_code=400,
+            detail="ISO 9001 PDF standard file not found in the workspace."
+        )
+
     # Resolve engine dynamically
     engine = get_engine(provider=provider)
     
