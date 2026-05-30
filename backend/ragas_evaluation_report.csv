@@ -1,0 +1,5 @@
+id,clause,question,faithfulness,answer_relevance
+7,Clause 7: Support,"Explain the compliance requirements for controlling documented information under Clause 7.5.3, specifically regarding distribution, access, retrieval, and storage controls.",1.0,0.0
+8,Clause 8: Operation,"What control measures and criteria must be applied to the evaluation, selection, and performance monitoring of external suppliers under Clause 8.4?",1.0,0.0
+9,Clause 9: Performance Evaluation,What are the mandatory standard inputs and outputs required to perform a compliant Management Review under Clause 9.3?,1.0,0.0
+10,Clause 10: Improvement,"What is the structured response, root-cause analysis, and corrective action review process required when a nonconformity occurs under Clause 10.2?",1.0,0.0

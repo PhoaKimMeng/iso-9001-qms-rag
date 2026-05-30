@@ -88,6 +88,16 @@ const elements = {
     traceEmptyContent: document.getElementById("trace-empty-content"),
     clearTraceBtn: document.getElementById("clear-trace-btn"),
     
+    // TAB 5: Ragas Evaluator
+    runEvalBtn: document.getElementById("run-eval-btn"),
+    evalTableBody: document.getElementById("eval-table-body"),
+    evalEmptyContent: document.getElementById("eval-empty-content"),
+    evalResultsContent: document.getElementById("eval-results-content"),
+    evalFaithfulnessVal: document.getElementById("eval-metric-faithfulness"),
+    evalRelevanceVal: document.getElementById("eval-metric-relevance"),
+    evalRecallVal: document.getElementById("eval-metric-recall"),
+    evalPrecisionVal: document.getElementById("eval-metric-precision"),
+    
     // Global Overlay
     loadingOverlay: document.getElementById("loading-overlay"),
     overlayTitle: document.getElementById("overlay-title"),
@@ -150,6 +160,8 @@ function setupTabNavigation() {
                 loadDiagnostics();
             } else if (targetTab === "tab-trace") {
                 loadTraceLogs();
+            } else if (targetTab === "tab-evaluate") {
+                loadEvaluationReport();
             }
         });
     });
@@ -274,6 +286,9 @@ function updateUploaderUI() {
 function setupEventListeners() {
     // Clear Trace button action
     elements.clearTraceBtn.addEventListener("click", clearTraceLog);
+
+    // Run Compliance Sweep action
+    elements.runEvalBtn.addEventListener("click", runEvaluationSweep);
 
     // 0. Provider Selector change
     elements.providerSelect.addEventListener("change", async () => {
@@ -999,5 +1014,110 @@ async function clearTraceLog() {
     } catch (err) {
         console.error("Clear trace failed:", err);
         alert(`Error clearing trace: ${err.message}`);
+    }
+}
+
+// TAB 5: RAGAS EVALUATOR FUNCTIONALITY
+async function loadEvaluationReport() {
+    try {
+        const response = await fetch(`${API_BASE}/api/evaluate`);
+        if (!response.ok) throw new Error("Failed to contact evaluation API");
+        const data = await response.json();
+        
+        if (data.status === "empty" || !data.records || data.records.length === 0) {
+            elements.evalResultsContent.classList.add("hidden");
+            elements.evalEmptyContent.classList.remove("hidden");
+            return;
+        }
+        
+        elements.evalEmptyContent.classList.add("hidden");
+        elements.evalResultsContent.classList.remove("hidden");
+        
+        // Render metrics cards
+        elements.evalFaithfulnessVal.textContent = data.average_faithfulness.toFixed(4);
+        elements.evalRelevanceVal.textContent = data.average_answer_relevance.toFixed(4);
+        elements.evalRecallVal.textContent = data.average_context_recall.toFixed(4);
+        elements.evalPrecisionVal.textContent = data.average_context_precision.toFixed(4);
+        
+        // Render detailed per-question rows
+        renderEvaluationTable(data.records);
+    } catch (err) {
+        console.error("Failed to load evaluation report:", err);
+        elements.evalResultsContent.classList.add("hidden");
+        elements.evalEmptyContent.classList.remove("hidden");
+    }
+}
+
+function renderEvaluationTable(records) {
+    elements.evalTableBody.innerHTML = "";
+    
+    records.forEach(r => {
+        // Color badge grading helper for premium aesthetics
+        const getGradeBadge = (score) => {
+            if (score >= 0.90) return `<span class="score-grade score-grade-excellent">${score.toFixed(4)}</span>`;
+            if (score >= 0.70) return `<span class="score-grade score-grade-good">${score.toFixed(4)}</span>`;
+            return `<span class="score-grade score-grade-warning">${score.toFixed(4)}</span>`;
+        };
+        
+        const tr = document.createElement("tr");
+        tr.style.borderBottom = "1px solid rgba(255,255,255,0.05)";
+        tr.style.transition = "background-color 0.2s ease";
+        tr.className = "eval-table-row";
+        
+        tr.innerHTML = `
+            <td style="padding: 12px 8px; font-weight: 600; color: #818cf8; font-size: 0.85rem;">Clause ${r.id}</td>
+            <td style="padding: 12px 8px; font-size: 0.88rem; color: #e2e8f0; line-height: 1.4;">
+                <div style="font-weight: 600; color: #cbd5e1; margin-bottom: 2px;">${r.clause}</div>
+                <div style="color: #94a3b8; font-style: italic;">"${r.question}"</div>
+            </td>
+            <td style="padding: 12px 8px; text-align: center;">${getGradeBadge(r.faithfulness)}</td>
+            <td style="padding: 12px 8px; text-align: center;">${getGradeBadge(r.answer_relevance)}</td>
+            <td style="padding: 12px 8px; text-align: center;">${getGradeBadge(r.context_recall)}</td>
+            <td style="padding: 12px 8px; text-align: center;">${getGradeBadge(r.context_precision)}</td>
+        `;
+        
+        elements.evalTableBody.appendChild(tr);
+    });
+}
+
+async function runEvaluationSweep() {
+    // Warn user that this takes time and requires API key if cloud provider is active
+    if (appState.provider === "gemini" && !appState.apiKeyConfigured) {
+        alert("Please configure a Gemini API key in the sidebar before running evaluations.");
+        return;
+    }
+    if (appState.provider === "cohere" && !appState.cohereKeyConfigured) {
+        alert("Please configure a Cohere API key in the sidebar before running evaluations.");
+        return;
+    }
+    
+    if (!confirm(`Are you sure you want to run a complete compliance evaluation sweep using Google Gemini as a judge? This will evaluate 10 compliance questions against the active agent and update all dashboard scores.`)) {
+        return;
+    }
+    
+    showOverlay(
+        `Running Compliance Audit Sweep...`,
+        `The AI Auditor is executing 10 compliance queries, fetching RAG documents, and grading responses across 4 standard metrics (Faithfulness, Relevance, Recall, Precision). Spaced safely to respect LLM quotas. Please wait (30-45 seconds).`
+    );
+    
+    try {
+        const response = await fetch(`${API_BASE}/api/evaluate/run`, {
+            method: "POST"
+        });
+        
+        if (!response.ok) {
+            const data = await response.json();
+            throw new Error(data.detail || "Evaluation failed.");
+        }
+        
+        const result = await response.json();
+        alert(`Compliance sweep completed successfully! Average Faithfulness: ${result.average_faithfulness.toFixed(4)} | Average Relevance: ${result.average_answer_relevance.toFixed(4)}`);
+        
+        await loadEvaluationReport();
+    } catch (err) {
+        console.error("Evaluation sweep execution error:", err);
+        alert(`Evaluation Error: ${err.message}`);
+    } finally {
+        hideOverlay();
     }
 }

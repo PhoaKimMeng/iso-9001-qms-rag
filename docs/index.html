@@ -159,6 +159,7 @@
                 <button class="tab-link" data-tab="tab-navigator">📑 Document Clause Navigator</button>
                 <button class="tab-link" data-tab="tab-diagnostics">📊 Ingestion Stats & Diagnostics</button>
                 <button class="tab-link" data-tab="tab-trace">🔍 Decision Trace Log</button>
+                <button class="tab-link" data-tab="tab-evaluate">📊 Ragas Evaluator</button>
             </nav>
 
             <!-- TAB 1: Chat Q&A Interface -->
@@ -285,6 +286,66 @@
 
                 <div id="trace-container" class="trace-timeline-container hidden">
                     <!-- Dynamic trace timeline rows loaded via JS -->
+                </div>
+            </section>
+
+            <!-- TAB 5: Ragas Evaluator Dashboard -->
+            <section id="tab-evaluate" class="tab-panel">
+                <div class="trace-header">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                        <div>
+                            <h3>📊 Ragas Compliance Evaluator</h3>
+                            <p class="subtitle" style="margin-top: 5px; color: #94a3b8;">Execute high-fidelity compliance audits using Google Gemini as a judge to grade your QMS Agent on ISO 9001 compliance standards.</p>
+                        </div>
+                        <button id="run-eval-btn" class="btn primary-btn" style="padding: 10px 20px;">⚡ Run Compliance Sweep</button>
+                    </div>
+                </div>
+
+                <div id="eval-empty-content" class="diagnostics-empty-state qms-container">
+                    <h4>No Evaluation Sweeps Executed Yet</h4>
+                    <p>Run the compliance sweep above to evaluate your QMS Auditor against a standard database of 10 structured audit questions.</p>
+                </div>
+
+                <div id="eval-results-content" class="hidden">
+                    <!-- Metrics grid for four Ragas metrics -->
+                    <div class="metrics-grid" style="margin-bottom: 24px;">
+                        <div class="metric-card">
+                            <div id="eval-metric-faithfulness" class="metric-value">-</div>
+                            <div class="metric-label">Avg Factual Faithfulness</div>
+                        </div>
+                        <div class="metric-card">
+                            <div id="eval-metric-relevance" class="metric-value">-</div>
+                            <div class="metric-label">Avg Answer Relevance</div>
+                        </div>
+                        <div class="metric-card">
+                            <div id="eval-metric-recall" class="metric-value">-</div>
+                            <div class="metric-label">Avg Context Recall</div>
+                        </div>
+                        <div class="metric-card">
+                            <div id="eval-metric-precision" class="metric-value">-</div>
+                            <div class="metric-label">Avg Context Precision</div>
+                        </div>
+                    </div>
+
+                    <!-- Per-question detailed table breakdown -->
+                    <div class="qms-container" style="padding: 20px; overflow-x: auto;">
+                        <h4 style="margin-top: 0; margin-bottom: 15px;">📋 Per-Question Compliance Breakdown</h4>
+                        <table class="qms-table" style="width: 100%; border-collapse: collapse; text-align: left;">
+                            <thead>
+                                <tr style="border-bottom: 2px solid rgba(255,255,255,0.1); color: #818cf8; font-weight: 600;">
+                                    <th style="padding: 12px 8px;">Clause</th>
+                                    <th style="padding: 12px 8px; width: 45%;">Audit Question</th>
+                                    <th style="padding: 12px 8px; text-align: center;">Faithfulness</th>
+                                    <th style="padding: 12px 8px; text-align: center;">Relevance</th>
+                                    <th style="padding: 12px 8px; text-align: center;">Recall</th>
+                                    <th style="padding: 12px 8px; text-align: center;">Precision</th>
+                                </tr>
+                            </thead>
+                            <tbody id="eval-table-body" style="color: #e2e8f0;">
+                                <!-- Dynamic rows loaded via JS -->
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </section>
         </main>

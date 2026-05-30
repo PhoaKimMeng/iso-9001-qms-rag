@@ -434,6 +434,72 @@ def clear_trace_log():
         raise HTTPException(status_code=500, detail=f"Failed to clear trace log: {e}")
 
 
+@app.get("/api/evaluate")
+def get_evaluation_report():
+    """Returns the cached Ragas evaluation report if available, otherwise returns empty list."""
+    report_file = os.path.join(os.path.dirname(__file__), "ragas_evaluation_report.csv")
+    if not os.path.exists(report_file):
+        return {
+            "status": "empty",
+            "average_faithfulness": 0.0,
+            "average_answer_relevance": 0.0,
+            "average_context_recall": 0.0,
+            "average_context_precision": 0.0,
+            "records": []
+        }
+    
+    try:
+        # Load the CSV report into a pandas dataframe
+        import pandas as pd
+        df = pd.read_csv(report_file)
+        records = df.to_dict(orient="records")
+        avg_f = float(df["faithfulness"].mean()) if "faithfulness" in df.columns else 0.0
+        avg_r = float(df["answer_relevance"].mean()) if "answer_relevance" in df.columns else 0.0
+        avg_rec = float(df["context_recall"].mean()) if "context_recall" in df.columns else 0.0
+        avg_prc = float(df["context_precision"].mean()) if "context_precision" in df.columns else 0.0
+        return {
+            "status": "success",
+            "average_faithfulness": round(avg_f, 4),
+            "average_answer_relevance": round(avg_r, 4),
+            "average_context_recall": round(avg_rec, 4),
+            "average_context_precision": round(avg_prc, 4),
+            "records": records
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to read evaluation report: {e}")
+
+
+@app.post("/api/evaluate/run")
+def trigger_evaluation_run():
+    """Triggers a fresh Ragas Q&A evaluation run against the active QMS agent."""
+    try:
+        # Import the unbuffered runner main to execute in-process
+        from eval_ragas import main as run_eval_main
+        run_eval_main()
+        
+        report_file = os.path.join(os.path.dirname(__file__), "ragas_evaluation_report.csv")
+        if os.path.exists(report_file):
+            import pandas as pd
+            df = pd.read_csv(report_file)
+            records = df.to_dict(orient="records")
+            avg_f = float(df["faithfulness"].mean()) if "faithfulness" in df.columns else 0.0
+            avg_r = float(df["answer_relevance"].mean()) if "answer_relevance" in df.columns else 0.0
+            avg_rec = float(df["context_recall"].mean()) if "context_recall" in df.columns else 0.0
+            avg_prc = float(df["context_precision"].mean()) if "context_precision" in df.columns else 0.0
+            return {
+                "status": "success",
+                "average_faithfulness": round(avg_f, 4),
+                "average_answer_relevance": round(avg_r, 4),
+                "average_context_recall": round(avg_rec, 4),
+                "average_context_precision": round(avg_prc, 4),
+                "records": records
+            }
+        else:
+            raise HTTPException(status_code=500, detail="Evaluation finished but report file was not generated.")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Evaluation execution failed: {e}")
+
+
 @app.get("/api/clauses")
 def get_clauses():
     """Returns the structured dictionary of ISO 9001:2015 clauses for navigator panel."""

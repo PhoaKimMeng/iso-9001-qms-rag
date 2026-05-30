@@ -363,7 +363,7 @@ input[type="range"]::-webkit-slider-thumb:hover {
     display: flex;
 }
 
-#tab-navigator, #tab-diagnostics, #tab-trace {
+#tab-navigator, #tab-diagnostics, #tab-trace, #tab-evaluate {
     overflow-y: auto;
     padding-right: 4px;
 }
@@ -1198,5 +1198,44 @@ input[type="range"]::-webkit-slider-thumb:hover {
     background: rgba(16, 185, 129, 0.1);
     color: #6ee7b7;
     border: 1px solid rgba(16, 185, 129, 0.2);
+}
+
+/* TAB 5: RAGAS EVALUATOR & DASHBOARD STYLES */
+.qms-table th, .qms-table td {
+    padding: 12px;
+    vertical-align: middle;
+}
+
+.eval-table-row:hover {
+    background-color: rgba(255, 255, 255, 0.02);
+}
+
+.score-grade {
+    display: inline-block;
+    padding: 4px 8px;
+    font-size: 0.8rem;
+    font-family: 'Courier Prime', monospace;
+    font-weight: 700;
+    border-radius: var(--radius-md);
+    text-align: center;
+    min-width: 60px;
+}
+
+.score-grade-excellent {
+    background-color: rgba(16, 185, 129, 0.12);
+    border: 1px solid rgba(16, 185, 129, 0.25);
+    color: #34d399;
+}
+
+.score-grade-good {
+    background-color: rgba(234, 179, 8, 0.12);
+    border: 1px solid rgba(234, 179, 8, 0.25);
+    color: #facc15;
+}
+
+.score-grade-warning {
+    background-color: rgba(239, 68, 68, 0.12);
+    border: 1px solid rgba(239, 68, 68, 0.25);
+    color: #f87171;
 }
 
