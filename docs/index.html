@@ -70,7 +70,23 @@
                     </div>
                     <p id="chunks-stat-text" class="small-text">No chunks indexed.</p>
                 </div>
-                <button id="ingest-btn" class="btn primary-btn" disabled>Ingest & Embed PDF</button>
+                
+                <!-- Dynamic PDF File Upload Area -->
+                <div class="form-group">
+                    <label for="pdf-file-input" class="file-upload-label" id="file-drop-zone">
+                        <span class="upload-icon">📁</span>
+                        <span class="upload-text">Select QMS / ISO 9001 PDF</span>
+                        <span class="upload-subtext">Drag & drop or browse</span>
+                    </label>
+                    <input type="file" id="pdf-file-input" accept=".pdf" style="display: none;">
+                    <div id="file-info-container" class="file-info-container hidden">
+                        <span class="file-icon">📄</span>
+                        <span id="selected-file-name" class="file-name">No file selected.</span>
+                        <button type="button" id="clear-file-btn" class="clear-file-btn" title="Clear selection">✕</button>
+                    </div>
+                </div>
+
+                <button id="ingest-btn" class="btn primary-btn" disabled>Ingest Selected Document</button>
             </div>
             <div class="glow-divider"></div>
 

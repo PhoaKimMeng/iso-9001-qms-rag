@@ -1,7 +1,7 @@
 import os
 import json
 import requests
-from fastapi import FastAPI, HTTPException, Body, Depends, Query
+from fastapi import FastAPI, HTTPException, Body, Depends, Query, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from typing import List, Dict, Any, Optional
@@ -223,22 +223,31 @@ def get_ollama_models():
 
 
 @app.post("/api/ingest")
-def trigger_ingest(force: bool = False, provider: str = "gemini"):
+def trigger_ingest(
+    file: UploadFile = File(...),
+    force: bool = False,
+    provider: str = "gemini"
+):
     """Triggers the PDF standard extraction, chunking, and embedding creation on selected provider."""
     # Resolve engine dynamically
     engine = get_engine(provider=provider)
     
-    # Resolve the PDF standard path (located in parent workspace directory)
-    pdf_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "ISO-9001-2015-Fifth-Edition.pdf"))
+    # Save the uploaded file to a temporary location inside the backend directory
+    temp_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "temp_ingest.pdf"))
     
-    if not os.path.exists(pdf_path):
+    try:
+        with open(temp_path, "wb") as buffer:
+            # Read and write file contents
+            content = file.file.read()
+            buffer.write(content)
+    except Exception as e:
         raise HTTPException(
-            status_code=404, 
-            detail="ISO 9001 PDF standard file not found in the workspace."
+            status_code=500,
+            detail=f"Failed to write uploaded file to temporary directory: {e}"
         )
         
     try:
-        chunks_count, loaded_from_cache = engine.ingest_pdf(pdf_path, force_rebuild=force)
+        chunks_count, loaded_from_cache = engine.ingest_pdf(temp_path, force_rebuild=force)
         return {
             "status": "success",
             "chunks_count": chunks_count,
@@ -247,6 +256,13 @@ def trigger_ingest(force: bool = False, provider: str = "gemini"):
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed PDF Ingestion: {e}")
+    finally:
+        # Clean up the temporary file immediately
+        if os.path.exists(temp_path):
+            try:
+                os.remove(temp_path)
+            except Exception as e:
+                print(f"Error removing temporary file {temp_path}: {e}")
 
 
 @app.post("/api/query")

@@ -12,7 +12,8 @@ let appState = {
     ollamaActive: false,
     indexReady: false,
     indexedChunks: 0,
-    diagnosticChunks: []       // cached chunks for diagnostics tab
+    diagnosticChunks: [],      // cached chunks for diagnostics tab
+    selectedFile: null         // tracks currently selected dynamic PDF
 };
 
 // DOM ELEMENT CACHE
@@ -32,6 +33,11 @@ const elements = {
     indexStatusText: document.getElementById("index-status-text"),
     chunksStatText: document.getElementById("chunks-stat-text"),
     ingestBtn: document.getElementById("ingest-btn"),
+    pdfFileInput: document.getElementById("pdf-file-input"),
+    fileDropZone: document.getElementById("file-drop-zone"),
+    fileInfoContainer: document.getElementById("file-info-container"),
+    selectedFileName: document.getElementById("selected-file-name"),
+    clearFileBtn: document.getElementById("clear-file-btn"),
     
     // Tuning Controls (Model Selection Groups)
     geminiModelsGroup: document.getElementById("gemini-models-group"),
@@ -234,6 +240,19 @@ async function fetchOllamaModels() {
     }
 }
 
+// DYNAMIC FILE UPLOAD STATE SYNCHRONIZATION
+function updateUploaderUI() {
+    if (appState.selectedFile) {
+        elements.fileInfoContainer.classList.remove("hidden");
+        elements.selectedFileName.textContent = appState.selectedFile.name;
+    } else {
+        elements.fileInfoContainer.classList.add("hidden");
+        elements.selectedFileName.textContent = "No file selected.";
+        elements.pdfFileInput.value = "";
+    }
+    checkSystemStatus();
+}
+
 // GLOBAL EVENT HANDLERS
 function setupEventListeners() {
     // 0. Provider Selector change
@@ -278,14 +297,24 @@ function setupEventListeners() {
     
     // 2. PDF Ingestion Action
     elements.ingestBtn.addEventListener("click", async () => {
+        if (!appState.selectedFile) {
+            alert("Please select a QMS or ISO 9001 PDF document first.");
+            return;
+        }
+        
         const provUpper = appState.provider.toUpperCase();
         showOverlay(
             `Processing ${provUpper} Ingestion...`, 
-            `The API is parsing your ISO PDF standard, running sliding-window chunking, generating local or cloud embeddings using ${provUpper}, and serializing the vector database. This takes 15-30 seconds.`
+            `The API is parsing your uploaded PDF standard, running sliding-window chunking, generating local or cloud embeddings using ${provUpper}, and serializing the vector database. This takes 15-30 seconds.`
         );
+        
         try {
+            const formData = new FormData();
+            formData.append("file", appState.selectedFile);
+            
             const response = await fetch(`${API_BASE}/api/ingest?force=true&provider=${appState.provider}`, {
-                method: "POST"
+                method: "POST",
+                body: formData
             });
             
             if (!response.ok) {
@@ -306,6 +335,53 @@ function setupEventListeners() {
             alert(`Ingestion Error: ${err.message}`);
         } finally {
             hideOverlay();
+        }
+    });
+
+    // 2a. Custom File Selector & Drag-Drop Zone Handlers
+    elements.pdfFileInput.addEventListener("change", (e) => {
+        const file = e.target.files[0];
+        if (file) {
+            appState.selectedFile = file;
+            updateUploaderUI();
+        }
+    });
+    
+    elements.clearFileBtn.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        appState.selectedFile = null;
+        updateUploaderUI();
+    });
+    
+    // Setup drag-and-drop mechanics
+    const dropZone = elements.fileDropZone;
+    
+    ['dragenter', 'dragover'].forEach(eventName => {
+        dropZone.addEventListener(eventName, (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            dropZone.classList.add('dragover');
+        }, false);
+    });
+    
+    ['dragleave', 'drop'].forEach(eventName => {
+        dropZone.addEventListener(eventName, (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            dropZone.classList.remove('dragover');
+        }, false);
+    });
+    
+    dropZone.addEventListener('drop', (e) => {
+        const dt = e.dataTransfer;
+        const file = dt.files[0];
+        
+        if (file && file.type === "application/pdf") {
+            appState.selectedFile = file;
+            updateUploaderUI();
+        } else if (file) {
+            alert("Only PDF files are supported!");
         }
     });
     
@@ -338,18 +414,18 @@ async function checkSystemStatus() {
             elements.indexStatusDot.className = "dot dot-green";
             elements.indexStatusText.textContent = `Index: Ready (${appState.provider.toUpperCase()})`;
             elements.chunksStatText.textContent = `${status.indexed_chunks} QMS chunks indexed.`;
-            elements.ingestBtn.textContent = "Rebuild QMS Index";
+            elements.ingestBtn.textContent = "Ingest Selected Document";
         } else {
             elements.indexStatusDot.className = "dot dot-red";
             elements.indexStatusText.textContent = `Index: Not Found (${appState.provider.toUpperCase()})`;
             elements.chunksStatText.textContent = "Ingestion required.";
-            elements.ingestBtn.textContent = "Ingest & Embed PDF";
+            elements.ingestBtn.textContent = "Ingest Selected Document";
         }
         
         // Manage active states based on Provider selection
         if (appState.provider === "gemini") {
             if (status.api_key_configured) {
-                elements.ingestBtn.disabled = false;
+                elements.ingestBtn.disabled = !appState.selectedFile;
                 elements.apiKeyInput.placeholder = "•••••••••••••••••••••••• (API Key Active)";
                 
                 if (status.index_ready) {
@@ -375,7 +451,7 @@ async function checkSystemStatus() {
             if (status.ollama_active) {
                 elements.ollamaStatusDot.className = "dot dot-green";
                 elements.ollamaStatusText.textContent = "Ollama: Connected";
-                elements.ingestBtn.disabled = false;
+                elements.ingestBtn.disabled = !appState.selectedFile;
                 
                 // Verify if local models are loaded
                 const hasLocalModels = elements.ollamaModelSelect.value !== "";

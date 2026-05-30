@@ -262,14 +262,18 @@ class RAGEngine:
         embeddings = []
         
         if self.provider == "gemini":
-            # Generate Gemini Embeddings in Batches (max 100 per API request)
-            batch_size = 100
+            # Generate Gemini Embeddings in rate-limit safe batches (max 100 RPM limit on free tier)
+            import time
+            batch_size = 40
             for i in range(0, len(chunks), batch_size):
+                if i > 0:
+                    # Sleep to stay well under the 100 requests-per-minute limit
+                    time.sleep(25)
                 batch = chunks[i:i+batch_size]
                 texts = [c["text"] for c in batch]
                 response = genai.embed_content(
-                    model="models/text-embedding-004",
-                    contents=texts,
+                    model="models/gemini-embedding-001",
+                    content=texts,
                     task_type="retrieval_document"
                 )
                 embeddings.extend(response["embedding"])
@@ -298,8 +302,8 @@ class RAGEngine:
         # 1. Embed query
         if self.provider == "gemini":
             query_resp = genai.embed_content(
-                model="models/text-embedding-004",
-                contents=user_query,
+                model="models/gemini-embedding-001",
+                content=user_query,
                 task_type="retrieval_query"
             )
             query_embedding = query_resp["embedding"]

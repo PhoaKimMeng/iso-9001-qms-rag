@@ -831,3 +831,101 @@ input[type="range"]::-webkit-slider-thumb:hover {
     color: var(--text-secondary);
     font-size: 0.95rem;
 }
+
+/* DYNAMIC PDF FILE UPLOADER STYLES */
+.file-upload-label {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 20px 16px;
+    background-color: rgba(21, 26, 38, 0.4);
+    border: 2px dashed var(--border-glass);
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    transition: var(--transition-smooth);
+    text-align: center;
+    gap: 6px;
+    margin-top: 4px;
+}
+
+.file-upload-label:hover {
+    background-color: rgba(99, 102, 241, 0.08);
+    border-color: var(--accent-color);
+    box-shadow: 0 0 12px rgba(99, 102, 241, 0.25);
+    transform: translateY(-1px);
+}
+
+.file-upload-label.dragover {
+    background-color: rgba(16, 185, 129, 0.08);
+    border-color: var(--color-green);
+    box-shadow: 0 0 12px rgba(16, 185, 129, 0.25);
+    transform: scale(1.02);
+}
+
+.upload-icon {
+    font-size: 1.6rem;
+    filter: drop-shadow(0 0 4px var(--accent-glow));
+    transition: var(--transition-smooth);
+}
+
+.file-upload-label:hover .upload-icon {
+    transform: scale(1.15) rotate(-5deg);
+}
+
+.upload-text {
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.upload-subtext {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+}
+
+.file-info-container {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background-color: rgba(99, 102, 241, 0.08);
+    border: 1px solid rgba(99, 102, 241, 0.2);
+    border-radius: var(--radius-md);
+    padding: 8px 12px;
+    margin-top: 8px;
+    animation: fadeInUp 0.3s ease-out;
+}
+
+.file-icon {
+    font-size: 1.1rem;
+}
+
+.file-name {
+    flex-grow: 1;
+    font-size: 0.82rem;
+    font-weight: 500;
+    color: #a5b4fc;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.clear-file-btn {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    cursor: pointer;
+    padding: 4px 6px;
+    border-radius: 50%;
+    transition: var(--transition-smooth);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.clear-file-btn:hover {
+    color: var(--color-red);
+    background-color: rgba(239, 68, 68, 0.1);
+    transform: rotate(90deg);
+}

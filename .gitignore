@@ -10,6 +10,7 @@ __pycache__/
 
 # Large / Generated RAG index files
 vector_store.json
+vector_store_*.json
 
 # Standard PDF documents (prevents copyright infringement of ISO standards on public GitHub repos)
 *.pdf
