@@ -77,6 +77,7 @@ class QueryRequest(BaseModel):
     temperature: float = Field(0.1, ge=0.0, le=1.0, description="Generative model temperature.")
     provider: str = Field("gemini", description="Selected provider pathway: 'gemini' or 'ollama'.")
     ollama_model: str = Field("llama3", description="Specific local Ollama model to use for chat.")
+    gemini_model: str = Field("gemini-2.5-flash", description="Specific Gemini model to use for chat.")
 
 class APIKeyRequest(BaseModel):
     api_key: str = Field(..., description="The Gemini API key to configure.")
@@ -296,7 +297,8 @@ def trigger_query(payload: QueryRequest):
             user_query=payload.query, 
             top_k=payload.top_k, 
             temperature=payload.temperature,
-            ollama_model=payload.ollama_model
+            ollama_model=payload.ollama_model,
+            gemini_model=payload.gemini_model
         )
         return result
     except Exception as e:

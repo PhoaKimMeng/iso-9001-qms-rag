@@ -512,7 +512,8 @@ async function processUserQuery(queryText) {
             top_k: top_k,
             temperature: temperature,
             provider: appState.provider,
-            ollama_model: elements.ollamaModelSelect.value || "llama3"
+            ollama_model: elements.ollamaModelSelect.value || "llama3",
+            gemini_model: elements.modelSelect.value || "gemini-2.5-flash"
         };
         
         // Call Backend API

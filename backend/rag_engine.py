@@ -288,7 +288,7 @@ class RAGEngine:
         
         return len(chunks), False
 
-    def query(self, user_query: str, top_k: int = 5, temperature: float = 0.2, ollama_model: str = "llama3") -> Dict[str, Any]:
+    def query(self, user_query: str, top_k: int = 5, temperature: float = 0.2, ollama_model: str = "llama3", gemini_model: str = "gemini-2.5-flash") -> Dict[str, Any]:
         """
         Runs the RAG query:
         1. Embeds the user query (Gemini or Ollama).
@@ -347,7 +347,7 @@ class RAGEngine:
         # 6. Generate Response
         if self.provider == "gemini":
             model = genai.GenerativeModel(
-                model_name="gemini-1.5-flash",
+                model_name=gemini_model,
                 system_instruction=system_instruction
             )
             response = model.generate_content(
