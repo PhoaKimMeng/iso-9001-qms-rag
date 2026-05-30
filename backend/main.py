@@ -125,7 +125,7 @@ class QueryRequest(BaseModel):
     provider: str = Field("gemini", description="Selected provider pathway: 'gemini', 'ollama', or 'cohere'.")
     ollama_model: str = Field("llama3", description="Specific local Ollama model to use for chat.")
     gemini_model: str = Field("gemini-2.5-flash", description="Specific Gemini model to use for chat.")
-    cohere_model: str = Field("command-r", description="Specific Cohere model to use for chat.")
+    cohere_model: str = Field("command-r-08-2024", description="Specific Cohere model to use for chat.")
 
 class APIKeyRequest(BaseModel):
     api_key: str = Field(..., description="The Gemini API key to configure.")

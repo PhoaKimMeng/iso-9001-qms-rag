@@ -577,7 +577,7 @@ async function processUserQuery(queryText) {
             provider: appState.provider,
             ollama_model: elements.ollamaModelSelect.value || "llama3",
             gemini_model: elements.modelSelect.value || "gemini-2.5-flash",
-            cohere_model: elements.cohereModelSelect.value || "command-r"
+            cohere_model: elements.cohereModelSelect.value || "command-r-08-2024"
         };
         
         // Call Backend API

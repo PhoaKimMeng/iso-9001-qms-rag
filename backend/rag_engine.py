@@ -342,7 +342,7 @@ class RAGEngine:
         
         return len(chunks), False
 
-    def query(self, user_query: str, top_k: int = 5, temperature: float = 0.2, ollama_model: str = "llama3", gemini_model: str = "gemini-2.5-flash", cohere_model: str = "command-r") -> Dict[str, Any]:
+    def query(self, user_query: str, top_k: int = 5, temperature: float = 0.2, ollama_model: str = "llama3", gemini_model: str = "gemini-2.5-flash", cohere_model: str = "command-r-08-2024") -> Dict[str, Any]:
         """
         Runs the RAG query:
         1. Embeds the user query (Gemini or Ollama).

@@ -225,11 +225,11 @@ if provider == "gemini":
 elif provider == "cohere":
     model_choice = st.sidebar.selectbox(
         "Generative Model",
-        options=["command-r", "command-r-plus", "command-light"],
+        options=["command-r-08-2024", "command-r-plus-08-2024", "command-r7b-12-2024"],
         format_func=lambda x: {
-            "command-r": "command-r (Balanced)",
-            "command-r-plus": "command-r-plus (Analytical)",
-            "command-light": "command-light (Fast)"
+            "command-r-08-2024": "command-r-08-2024 (Balanced)",
+            "command-r-plus-08-2024": "command-r-plus-08-2024 (Analytical)",
+            "command-r7b-12-2024": "command-r7b-12-2024 (Fast)"
         }[x]
     )
 else:
@@ -351,7 +351,7 @@ with tab_chat:
                             temperature=temperature,
                             ollama_model=model_choice if provider == "ollama" else "llama3",
                             gemini_model=model_choice if provider == "gemini" else "gemini-2.5-flash",
-                            cohere_model=model_choice if provider == "cohere" else "command-r"
+                            cohere_model=model_choice if provider == "cohere" else "command-r-08-2024"
                         )
                         
                         st.markdown(result["answer"])
