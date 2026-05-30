@@ -83,6 +83,11 @@ const elements = {
     inspectChunkClauses: document.getElementById("inspect-chunk-clauses"),
     inspectChunkText: document.getElementById("inspect-chunk-text"),
     
+    // TAB 4: Trace Timeline
+    traceContainer: document.getElementById("trace-container"),
+    traceEmptyContent: document.getElementById("trace-empty-content"),
+    clearTraceBtn: document.getElementById("clear-trace-btn"),
+    
     // Global Overlay
     loadingOverlay: document.getElementById("loading-overlay"),
     overlayTitle: document.getElementById("overlay-title"),
@@ -143,6 +148,8 @@ function setupTabNavigation() {
             // Reload diagnostics for the current active provider
             if (targetTab === "tab-diagnostics") {
                 loadDiagnostics();
+            } else if (targetTab === "tab-trace") {
+                loadTraceLogs();
             }
         });
     });
@@ -265,6 +272,9 @@ function updateUploaderUI() {
 
 // GLOBAL EVENT HANDLERS
 function setupEventListeners() {
+    // Clear Trace button action
+    elements.clearTraceBtn.addEventListener("click", clearTraceLog);
+
     // 0. Provider Selector change
     elements.providerSelect.addEventListener("change", async () => {
         handleProviderSwitch();
@@ -815,4 +825,179 @@ function showOverlay(title, text) {
 
 function hideOverlay() {
     elements.loadingOverlay.classList.add("hidden");
+}
+
+// DECISION TRACE LOG LOAD & RENDER
+async function loadTraceLogs() {
+    try {
+        const response = await fetch(`${API_BASE}/api/trace`);
+        if (!response.ok) throw new Error("Failed to load trace log");
+        const traces = await response.json();
+        
+        if (!traces || traces.length === 0) {
+            elements.traceContainer.classList.add("hidden");
+            elements.traceEmptyContent.classList.remove("hidden");
+            return;
+        }
+        
+        elements.traceEmptyContent.classList.add("hidden");
+        elements.traceContainer.classList.remove("hidden");
+        
+        renderTraceTimeline(traces);
+    } catch (err) {
+        console.error("Trace load failed:", err);
+        elements.traceContainer.classList.add("hidden");
+        elements.traceEmptyContent.classList.remove("hidden");
+    }
+}
+
+function renderTraceTimeline(traces) {
+    elements.traceContainer.innerHTML = "";
+    
+    const sortedTraces = [...traces].reverse();
+    
+    sortedTraces.forEach((trace) => {
+        const traceDate = new Date(trace.timestamp).toLocaleString();
+        
+        let attemptsHTML = "";
+        
+        trace.query_attempts.forEach((attempt) => {
+            const isRetry = attempt.attempt > 0;
+            const statusClass = isRetry ? "triggered" : "passed";
+            const statusLabel = isRetry ? `Rewrite Attempt #${attempt.attempt}` : "Original Retrieval";
+            
+            let candidatesHTML = "";
+            if (attempt.candidates && attempt.candidates.length > 0) {
+                candidatesHTML = `<div class="trace-scores-list">`;
+                attempt.candidates.forEach((cand, idx) => {
+                    let boostTagsHTML = "";
+                    if (cand.boosts && Object.keys(cand.boosts).length > 0) {
+                        boostTagsHTML = `<div class="trace-boosts-container">`;
+                        for (const [key, value] of Object.entries(cand.boosts)) {
+                            const formattedKey = key.replace(/_/g, " ");
+                            boostTagsHTML += `<span class="trace-boost-tag">🔥 ${formattedKey}: +${value.toFixed(2)}</span>`;
+                        }
+                        boostTagsHTML += `</div>`;
+                    }
+                    
+                    const origWidth = Math.max(cand.original_score * 100, 5);
+                    const rerkWidth = Math.max(cand.reranked_score * 100, 5);
+                    
+                    candidatesHTML += `
+                        <div class="trace-score-row">
+                            <div class="trace-score-meta" style="margin-bottom: 8px;">
+                                <span class="trace-chunk-info" style="font-weight:600; color:#818cf8;">Rank #${idx + 1} | Chunk #${cand.chunk_id} | Page ${cand.page}</span>
+                                <span style="font-size: 0.76rem; color: #94a3b8; font-weight: 500;">Clauses: ${cand.clauses.join(", ")}</span>
+                            </div>
+                            <div style="font-size: 0.8rem; color: #cbd5e1; font-style: italic; margin-bottom: 10px; background: rgba(0,0,0,0.2); padding: 8px; border-radius: 4px; border-left: 2px solid #6366f1;">
+                                "${cand.snippet}"
+                            </div>
+                            <div class="trace-scores-comparison">
+                                <div class="trace-bar-wrapper">
+                                    <span class="trace-bar-label">Original:</span>
+                                    <div class="trace-bar-container">
+                                        <div class="trace-bar-fill original" style="width: ${origWidth}%"></div>
+                                    </div>
+                                    <span class="trace-bar-value original">${cand.original_score.toFixed(4)}</span>
+                                </div>
+                                <div class="trace-bar-wrapper">
+                                    <span class="trace-bar-label">Reranked:</span>
+                                    <div class="trace-bar-container">
+                                        <div class="trace-bar-fill reranked" style="width: ${rerkWidth}%"></div>
+                                    </div>
+                                    <span class="trace-bar-value reranked">${cand.reranked_score.toFixed(4)}</span>
+                                </div>
+                            </div>
+                            ${boostTagsHTML}
+                        </div>
+                    `;
+                });
+                candidatesHTML += `</div>`;
+            }
+            
+            let stepDesc = "";
+            if (isRetry) {
+                stepDesc = `Top similarity score was below 0.5 threshold. Programmatic search-rewriting was automatically triggered to optimize term coverage.`;
+            } else {
+                stepDesc = `Executed vector similarity scan on QMS standards index. Top raw semantic similarity score returned: <strong>${attempt.top_score.toFixed(4)}</strong>.`;
+            }
+            
+            attemptsHTML += `
+                <div class="trace-flow-step" style="margin-bottom: 24px;">
+                    <div class="trace-step-title-row">
+                        <span class="trace-step-icon">${isRetry ? "🔄" : "🔍"}</span>
+                        <span class="trace-step-name">${statusLabel}</span>
+                        <span class="trace-step-badge ${statusClass}">${attempt.top_score >= 0.5 ? "Similarity Passed" : "Low Similarity"}</span>
+                    </div>
+                    <div class="trace-step-detail">
+                        <p>${stepDesc}</p>
+                        <p style="margin-top: 6px; color: #818cf8; font-weight: 500;">Query used: "${attempt.query}"</p>
+                        ${candidatesHTML}
+                    </div>
+                </div>
+            `;
+        });
+        
+        let rerankStepHTML = "";
+        const finalAttempt = trace.query_attempts[trace.query_attempts.length - 1];
+        if (finalAttempt && finalAttempt.candidates) {
+            rerankStepHTML = `
+                <div class="trace-flow-step" style="margin-bottom: 24px;">
+                    <div class="trace-step-title-row">
+                        <span class="trace-step-icon">⚖️</span>
+                        <span class="trace-step-name">QMS Auditing Rerank Decision</span>
+                        <span class="trace-step-badge info">Active</span>
+                    </div>
+                    <div class="trace-step-detail">
+                        Candidate standard passages were prioritized and boosted in real-time by matching strict compliance obligation keywords (e.g. <code>shall</code>, <code>must</code>, <code>documented information</code>). Visualized comparison chart is rendered above for each candidate chunk.
+                    </div>
+                </div>
+            `;
+        }
+        
+        const traceHTML = `
+            <div class="trace-timeline-item" style="margin-bottom: 20px;">
+                <div class="trace-meta-header">
+                    <span class="trace-time">🕒 Audit Timestamp: ${traceDate}</span>
+                    <span class="trace-provider-tag">${trace.provider.toUpperCase()} RAG Path</span>
+                </div>
+                <div class="trace-query-box">
+                    <h4 style="margin-top:0;">Original Question Submitted</h4>
+                    <div class="trace-query-text">"${trace.query}"</div>
+                </div>
+                <div class="trace-flow">
+                    ${attemptsHTML}
+                    ${rerankStepHTML}
+                    <div class="trace-flow-step">
+                        <div class="trace-step-title-row">
+                            <span class="trace-step-icon">🛡️</span>
+                            <span class="trace-step-name">Generative Auditor Response</span>
+                            <span class="trace-step-badge passed">Complete</span>
+                        </div>
+                        <div class="trace-step-detail">
+                            Formulated QMS Auditor answer utilizing selected sources. Output summary: <em style="color:#e2e8f0;">"${trace.answer_summary}"</em>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        elements.traceContainer.innerHTML += traceHTML;
+    });
+}
+
+async function clearTraceLog() {
+    if (!confirm("Are you sure you want to clear your decision trace log history?")) return;
+    
+    try {
+        const response = await fetch(`${API_BASE}/api/trace/clear`, { method: "POST" });
+        if (!response.ok) throw new Error("Failed to clear trace");
+        
+        alert("Decision trace log history cleared successfully.");
+        elements.traceContainer.classList.add("hidden");
+        elements.traceEmptyContent.classList.remove("hidden");
+    } catch (err) {
+        console.error("Clear trace failed:", err);
+        alert(`Error clearing trace: ${err.message}`);
+    }
 }

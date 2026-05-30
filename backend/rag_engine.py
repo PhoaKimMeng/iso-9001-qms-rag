@@ -180,6 +180,73 @@ class VectorStore:
             return False
 
 
+class AuditReranker:
+    """Reranks retrieved standard passages based on QMS auditing priorities (e.g. 'shall' requirements, audit keywords)."""
+    
+    @staticmethod
+    def rerank(retrieved: List[Tuple[Dict[str, Any], float]], query: str) -> List[Tuple[Dict[str, Any], float, float, Dict[str, Any]]]:
+        """
+        Reranks the retrieved chunks by adding QMS priority boosts.
+        Returns list of (chunk, original_score, reranked_score, explanation_dict)
+        """
+        reranked_results = []
+        
+        # Keywords suggesting strict requirements or documentation obligations
+        shall_pattern = re.compile(r"\bshall\b", re.IGNORECASE)
+        must_obligation_pattern = re.compile(r"\b(must|required|obligation|should)\b", re.IGNORECASE)
+        audit_doc_pattern = re.compile(r"\b(documented information|record|retained|maintained|procedure)\b", re.IGNORECASE)
+        
+        # Extract keywords from query for exact term matching
+        query_words = set(re.findall(r"\b\w{4,}\b", query.lower()))
+        
+        for chunk, original_score in retrieved:
+            text = chunk["text"]
+            boosts = {}
+            reranked_score = original_score
+            
+            # 1. Strict obligation boost ("shall" is a mandatory requirement in QMS)
+            if shall_pattern.search(text):
+                boost = 0.05
+                reranked_score += boost
+                boosts["shall_obligation"] = boost
+                
+            # 2. Recommended/general requirement boost
+            elif must_obligation_pattern.search(text):
+                boost = 0.02
+                reranked_score += boost
+                boosts["requirement_terms"] = boost
+                
+            # 3. Documented information boost (extremely critical for auditors)
+            if audit_doc_pattern.search(text):
+                boost = 0.03
+                reranked_score += boost
+                boosts["documentation_records"] = boost
+                
+            # 4. Content keyword matching overlap
+            chunk_words = set(re.findall(r"\b\w{4,}\b", text.lower()))
+            overlap = query_words.intersection(chunk_words)
+            if overlap:
+                boost = min(0.01 * len(overlap), 0.04)
+                reranked_score += boost
+                boosts["keyword_overlap"] = boost
+                
+            reranked_results.append((
+                chunk,
+                original_score,
+                reranked_score,
+                {
+                    "original_score": original_score,
+                    "reranked_score": reranked_score,
+                    "boosts": boosts,
+                    "text_snippet": text[:80] + "..."
+                }
+            ))
+            
+        # Sort descending by reranked score
+        reranked_results.sort(key=lambda x: x[2], reverse=True)
+        return reranked_results
+
+
 class RAGEngine:
     """Orchestrates the entire RAG pipeline from ingestion to query answering."""
     
@@ -419,19 +486,37 @@ class RAGEngine:
             else:
                 query_embedding = self._get_embeddings_ollama([current_query])[0]
             
-            # 2. Retrieve top matching chunks
-            retrieved = self.vector_store.query(query_embedding, top_k=top_k)
+            # 2. Retrieve top matching chunks (retrieve top_k + 3 to allow reranking to shift selection)
+            retrieved_candidates = self.vector_store.query(query_embedding, top_k=top_k + 3)
             
-            # Check similarity score of the top retrieved chunk
-            top_score = retrieved[0][1] if retrieved else 0.0
+            # Check similarity score of the top retrieved candidate chunk (before reranking)
+            top_score = retrieved_candidates[0][1] if retrieved_candidates else 0.0
+            
+            # Apply QMS priority reranking
+            reranked_list = AuditReranker.rerank(retrieved_candidates, current_query)
+            final_retrieved = [(item[0], item[2]) for item in reranked_list[:top_k]]
+            
             attempts_log.append({
                 "attempt": attempt,
                 "query": current_query,
-                "top_score": top_score
+                "top_score": float(top_score),
+                "candidates": [
+                    {
+                        "chunk_id": item[0]["id"],
+                        "clauses": item[0]["clauses"],
+                        "page": item[0]["page"],
+                        "original_score": float(item[1]),
+                        "reranked_score": float(item[2]),
+                        "boosts": item[3]["boosts"],
+                        "snippet": item[3]["text_snippet"]
+                    }
+                    for item in reranked_list
+                ]
             })
             
             if top_score >= 0.5 or attempt == max_retries:
                 # Similarity is good enough, or we've hit max retries
+                retrieved = final_retrieved
                 break
                 
             # Otherwise, rewrite query for retry

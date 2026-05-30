@@ -340,6 +340,29 @@ def trigger_ingest(
                 print(f"Error removing temporary file {temp_path}: {e}")
 
 
+TRACE_LOG_FILE = os.path.join(os.path.dirname(__file__), "trace_log.json")
+
+def save_trace_log(trace_data: Dict[str, Any]):
+    """Appends a new decision row to the local trace_log.json file."""
+    history = []
+    try:
+        if os.path.exists(TRACE_LOG_FILE):
+            with open(TRACE_LOG_FILE, "r", encoding="utf-8") as f:
+                history = json.load(f)
+                if not isinstance(history, list):
+                    history = []
+    except Exception as e:
+        print(f"Error loading trace history: {e}")
+        
+    history.append(trace_data)
+    
+    try:
+        with open(TRACE_LOG_FILE, "w", encoding="utf-8") as f:
+            json.dump(history, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print(f"Error writing trace log: {e}")
+
+
 @app.post("/api/query")
 def trigger_query(payload: QueryRequest):
     """Executes a semantic vector Q&A query and returns a citation-backed LLM response."""
@@ -367,9 +390,48 @@ def trigger_query(payload: QueryRequest):
             gemini_model=payload.gemini_model,
             cohere_model=payload.cohere_model
         )
+        
+        # Save trace decision log row
+        from datetime import datetime
+        trace_row = {
+            "timestamp": datetime.now().isoformat(),
+            "query": payload.query,
+            "provider": payload.provider,
+            "gemini_model": payload.gemini_model if payload.provider == "gemini" else "",
+            "cohere_model": payload.cohere_model if payload.provider == "cohere" else "",
+            "ollama_model": payload.ollama_model if payload.provider == "ollama" else "",
+            "query_attempts": result.get("query_attempts", []),
+            "answer_summary": result.get("answer", "")[:120] + "..."
+        }
+        save_trace_log(trace_row)
+        
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed generation: {e}")
+
+
+@app.get("/api/trace")
+def get_trace_log():
+    """Returns the query decision trace log containing search, rewrite, and rerank metrics."""
+    if not os.path.exists(TRACE_LOG_FILE):
+        return []
+    try:
+        with open(TRACE_LOG_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            return data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to read trace log: {e}")
+
+
+@app.post("/api/trace/clear")
+def clear_trace_log():
+    """Clears the query decision trace log history."""
+    try:
+        if os.path.exists(TRACE_LOG_FILE):
+            os.remove(TRACE_LOG_FILE)
+        return {"status": "success", "message": "Decision trace log cleared."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to clear trace log: {e}")
 
 
 @app.get("/api/clauses")

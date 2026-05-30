@@ -158,6 +158,7 @@
                 <button class="tab-link active" data-tab="tab-chat">💬 Q&A Auditor Chat</button>
                 <button class="tab-link" data-tab="tab-navigator">📑 Document Clause Navigator</button>
                 <button class="tab-link" data-tab="tab-diagnostics">📊 Ingestion Stats & Diagnostics</button>
+                <button class="tab-link" data-tab="tab-trace">🔍 Decision Trace Log</button>
             </nav>
 
             <!-- TAB 1: Chat Q&A Interface -->
@@ -262,6 +263,28 @@
                 <div id="diagnostics-empty-content" class="diagnostics-empty-state qms-container">
                     <h4>No Index Loaded</h4>
                     <p>Please perform the PDF standard ingestion in the sidebar to view diagnostics metrics.</p>
+                </div>
+            </section>
+
+            <!-- TAB 4: Decision Trace Panel -->
+            <section id="tab-trace" class="tab-panel">
+                <div class="trace-header">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                        <div>
+                            <h3>🔍 Query Decision Trace Timeline</h3>
+                            <p class="subtitle" style="margin-top: 5px; color: #94a3b8;">Deep-dive audit logs for every QMS query, showing embedding similarities, LLM search-rewriting trigger events, and obligation keyword reranking.</p>
+                        </div>
+                        <button id="clear-trace-btn" class="btn secondary-btn" style="background: rgba(239, 68, 68, 0.1); border-color: rgba(239, 68, 68, 0.25); color: #fca5a5; padding: 6px 14px; font-size: 0.85rem;">✕ Clear Trace Log</button>
+                    </div>
+                </div>
+
+                <div id="trace-empty-content" class="diagnostics-empty-state qms-container">
+                    <h4>No Trace Logs Recorded Yet</h4>
+                    <p>Submit questions inside the Q&A Auditor Chat tab first to see real-time vector search and routing decisions mapped in the timeline.</p>
+                </div>
+
+                <div id="trace-container" class="trace-timeline-container hidden">
+                    <!-- Dynamic trace timeline rows loaded via JS -->
                 </div>
             </section>
         </main>

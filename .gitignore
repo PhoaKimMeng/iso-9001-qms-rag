@@ -23,3 +23,6 @@ Desktop.ini
 
 # Streamlit config / cache
 .streamlit/
+
+# Local trace decision database
+trace_log.json
