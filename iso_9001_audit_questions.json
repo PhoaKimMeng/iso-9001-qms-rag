@@ -1,0 +1,72 @@
+[
+  {
+    "id": 1,
+    "clause": "Clause 4: Context of the Organization",
+    "sub_clause": "4.3 Determining the scope of the quality management system",
+    "question": "What documented information is required to show compliance with Clause 4.3 regarding determining the scope of the Quality Management System?",
+    "audit_objective": "Verify that the organization has established, maintained, and documented the physical and operational boundaries of their QMS."
+  },
+  {
+    "id": 2,
+    "clause": "Clause 5: Leadership",
+    "sub_clause": "5.1.2 Customer focus",
+    "question": "Under Clause 5.1.2, what specific actions must top management demonstrate to maintain customer focus and enhance satisfaction?",
+    "audit_objective": "Confirm top management leadership shows active customer-centric commitment, including regulatory compliance and risk management affecting customer satisfaction."
+  },
+  {
+    "id": 3,
+    "clause": "Clause 5: Leadership",
+    "sub_clause": "5.2.2 Communicating the quality policy",
+    "question": "How does ISO 9001:2015 describe the top management duties and actions expected for establishing, communicating, and applying the Quality Policy under Clause 5.2?",
+    "audit_objective": "Check that the quality policy is available, understood, applied, and accessible to relevant interested parties."
+  },
+  {
+    "id": 4,
+    "clause": "Clause 6: Planning",
+    "sub_clause": "6.1 Actions to address risks and opportunities",
+    "question": "How should an organization plan, integrate, and document actions to address risks and opportunities according to Clause 6.1?",
+    "audit_objective": "Assess that risk-based thinking is integrated with operational controls, planning preventative actions and continual improvement evaluations."
+  },
+  {
+    "id": 5,
+    "clause": "Clause 6: Planning",
+    "sub_clause": "6.2 Quality objectives and planning to achieve them",
+    "question": "What are the criteria for establishing quality objectives under Clause 6.2, and what documented details must be maintained to show planning for achievement?",
+    "audit_objective": "Verify objectives are measurable, monitored, communicated, aligned with the policy, and have clear task owners and timelines."
+  },
+  {
+    "id": 6,
+    "clause": "Clause 7: Support",
+    "sub_clause": "7.1.5 Monitoring and measuring resources",
+    "question": "What are the strict requirements for calibrating and safeguarding monitoring and measuring equipment under Clause 7.1.5?",
+    "audit_objective": "Validate that measuring equipment is traceable to national standards, verified at specified intervals, and protected from adjustments."
+  },
+  {
+    "id": 7,
+    "clause": "Clause 7: Support",
+    "sub_clause": "7.5.3 Control of documented information",
+    "question": "Explain the compliance requirements for controlling documented information under Clause 7.5.3, specifically regarding distribution, access, retrieval, and storage controls.",
+    "audit_objective": "Ensure documented resources (both local and external) are protected from loss, tampering, or unintended alterations."
+  },
+  {
+    "id": 8,
+    "clause": "Clause 8: Operation",
+    "sub_clause": "8.4 Control of externally provided processes, products and services",
+    "question": "What control measures and criteria must be applied to the evaluation, selection, and performance monitoring of external suppliers under Clause 8.4?",
+    "audit_objective": "Check that criteria exist for vendor evaluations, documented results are retained, and supplier performance is tracked regularly."
+  },
+  {
+    "id": 9,
+    "clause": "Clause 9: Performance Evaluation",
+    "sub_clause": "9.3 Management review",
+    "question": "What are the mandatory standard inputs and outputs required to perform a compliant Management Review under Clause 9.3?",
+    "audit_objective": "Verify the executive review includes audit outcomes, customer feedback, objectives status, risk treatment effectiveness, and action items."
+  },
+  {
+    "id": 10,
+    "clause": "Clause 10: Improvement",
+    "sub_clause": "10.2 Nonconformity and corrective action",
+    "question": "What is the structured response, root-cause analysis, and corrective action review process required when a nonconformity occurs under Clause 10.2?",
+    "audit_objective": "Confirm the organization reacts immediately, evaluates corrective needs, reviews action effectiveness, and retains documented proof of results."
+  }
+]
