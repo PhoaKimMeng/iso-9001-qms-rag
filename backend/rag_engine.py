@@ -188,7 +188,8 @@ class RAGEngine:
         # Configure Gemini API
         genai.configure(api_key=api_key)
         self.vector_store = VectorStore()
-        self.index_file = "vector_store.json"
+        # Default save path inside the backend folder
+        self.index_file = os.path.join(os.path.dirname(__file__), "vector_store.json")
 
     def ingest_pdf(self, pdf_path: str, force_rebuild: bool = False) -> Tuple[int, bool]:
         """

@@ -1,5 +1,5 @@
 import os
-from rag_engine import PDFProcessor
+from backend.rag_engine import PDFProcessor
 
 def main():
     print("=== Testing ISO 9001:2015 PDF Extraction & Chunking ===")
