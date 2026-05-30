@@ -3,7 +3,7 @@
 // Dynamic API URL: resolves localhost locally and automatically falls back to your public cloud API URL when online
 const API_BASE = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1"
     ? "http://127.0.0.1:8000"
-    : "https://iso-9001-qms-rag-backend.onrender.com";
+    : "https://iso-9001-qms-rag.onrender.com";
 
 // App Global State
 let appState = {
