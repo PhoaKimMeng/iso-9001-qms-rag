@@ -206,7 +206,7 @@ class RAGEngine:
                 response = requests.post(url, json={
                     "model": "nomic-embed-text",
                     "prompt": text
-                }, timeout=15)
+                }, timeout=90)
                 response.raise_for_status()
                 embeddings.append(response.json()["embedding"])
             except Exception as e:
@@ -231,7 +231,7 @@ class RAGEngine:
             "stream": False
         }
         try:
-            response = requests.post(url, json=payload, timeout=60)
+            response = requests.post(url, json=payload, timeout=300)
             response.raise_for_status()
             result = response.json()
             return result["message"]["content"]
