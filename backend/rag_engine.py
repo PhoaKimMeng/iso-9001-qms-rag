@@ -2,6 +2,7 @@ import os
 import json
 import re
 import numpy as np
+import requests
 from pypdf import PdfReader
 import google.generativeai as genai
 from typing import List, Dict, Any, Tuple, Optional
@@ -132,7 +133,6 @@ class VectorStore:
         q_vec = np.array(query_embedding, dtype=np.float32)
         
         # Compute cosine similarity
-        # Cosine = (A dot B) / (||A|| * ||B||)
         dot_products = np.dot(self.embeddings, q_vec)
         norms_docs = np.linalg.norm(self.embeddings, axis=1)
         norm_q = np.linalg.norm(q_vec)
@@ -183,13 +183,63 @@ class VectorStore:
 class RAGEngine:
     """Orchestrates the entire RAG pipeline from ingestion to query answering."""
     
-    def __init__(self, api_key: str):
+    def __init__(self, api_key: str = "", provider: str = "gemini"):
         self.api_key = api_key
-        # Configure Gemini API
-        genai.configure(api_key=api_key)
+        self.provider = provider.lower()
+        
+        # Configure Gemini if provider is active
+        if self.provider == "gemini" and api_key:
+            genai.configure(api_key=api_key)
+            
         self.vector_store = VectorStore()
-        # Default save path inside the backend folder
-        self.index_file = os.path.join(os.path.dirname(__file__), "vector_store.json")
+        
+        # Isolate database file names by provider to prevent matrix shape conflicts!
+        self.index_name = "vector_store_gemini.json" if self.provider == "gemini" else "vector_store_ollama.json"
+        self.index_file = os.path.join(os.path.dirname(__file__), self.index_name)
+
+    def _get_embeddings_ollama(self, texts: List[str]) -> List[List[float]]:
+        """Invokes the local Ollama embeddings REST service (nomic-embed-text)."""
+        url = "http://127.0.0.1:11434/api/embeddings"
+        embeddings = []
+        for text in texts:
+            try:
+                response = requests.post(url, json={
+                    "model": "nomic-embed-text",
+                    "prompt": text
+                }, timeout=15)
+                response.raise_for_status()
+                embeddings.append(response.json()["embedding"])
+            except Exception as e:
+                raise RuntimeError(
+                    f"Ollama local embedding failed. Make sure you pulled the embedding model first "
+                    f"by running 'ollama pull nomic-embed-text' in your terminal. Error: {e}"
+                )
+        return embeddings
+
+    def _query_ollama(self, prompt: str, system_instruction: str, model_name: str, temperature: float) -> str:
+        """Invokes the local Ollama chat REST service."""
+        url = "http://127.0.0.1:11434/api/chat"
+        payload = {
+            "model": model_name,
+            "messages": [
+                {"role": "system", "content": system_instruction},
+                {"role": "user", "content": prompt}
+            ],
+            "options": {
+                "temperature": temperature
+            },
+            "stream": False
+        }
+        try:
+            response = requests.post(url, json=payload, timeout=60)
+            response.raise_for_status()
+            result = response.json()
+            return result["message"]["content"]
+        except Exception as e:
+            raise RuntimeError(
+                f"Ollama chat generation failed. Make sure you have downloaded the local model "
+                f"by running 'ollama pull {model_name}' and Ollama is active. Error: {e}"
+            )
 
     def ingest_pdf(self, pdf_path: str, force_rebuild: bool = False) -> Tuple[int, bool]:
         """
@@ -208,21 +258,25 @@ class RAGEngine:
         if not chunks:
             return 0, False
             
-        # 3. Generate Embeddings in Batches (max 100 per API request)
-        batch_size = 100
+        # 3. Generate Embeddings
         embeddings = []
         
-        for i in range(0, len(chunks), batch_size):
-            batch = chunks[i:i+batch_size]
-            texts = [c["text"] for c in batch]
-            
-            # API call to generate embeddings
-            response = genai.embed_content(
-                model="models/text-embedding-004",
-                contents=texts,
-                task_type="retrieval_document"
-            )
-            embeddings.extend(response["embedding"])
+        if self.provider == "gemini":
+            # Generate Gemini Embeddings in Batches (max 100 per API request)
+            batch_size = 100
+            for i in range(0, len(chunks), batch_size):
+                batch = chunks[i:i+batch_size]
+                texts = [c["text"] for c in batch]
+                response = genai.embed_content(
+                    model="models/text-embedding-004",
+                    contents=texts,
+                    task_type="retrieval_document"
+                )
+                embeddings.extend(response["embedding"])
+        else:
+            # Generate Ollama Local Embeddings
+            texts = [c["text"] for c in chunks]
+            embeddings = self._get_embeddings_ollama(texts)
             
         # 4. Add to VectorStore and Save
         self.vector_store.add_chunks(chunks, embeddings)
@@ -230,24 +284,27 @@ class RAGEngine:
         
         return len(chunks), False
 
-    def query(self, user_query: str, top_k: int = 5, temperature: float = 0.2) -> Dict[str, Any]:
+    def query(self, user_query: str, top_k: int = 5, temperature: float = 0.2, ollama_model: str = "llama3") -> Dict[str, Any]:
         """
         Runs the RAG query:
-        1. Embeds the user query.
-        2. Retrieves the most relevant chunks.
+        1. Embeds the user query (Gemini or Ollama).
+        2. Retrieves the most relevant chunks from the corresponding vector store.
         3. Formulates context.
-        4. Queries Gemini to generate a citation-aware answer.
+        4. Generates response (Gemini or local Ollama).
         """
         if not self.vector_store.chunks:
             raise ValueError("No chunks have been indexed. Please ingest the PDF document first.")
             
         # 1. Embed query
-        query_resp = genai.embed_content(
-            model="models/text-embedding-004",
-            contents=user_query,
-            task_type="retrieval_query"
-        )
-        query_embedding = query_resp["embedding"]
+        if self.provider == "gemini":
+            query_resp = genai.embed_content(
+                model="models/text-embedding-004",
+                contents=user_query,
+                task_type="retrieval_query"
+            )
+            query_embedding = query_resp["embedding"]
+        else:
+            query_embedding = self._get_embeddings_ollama([user_query])[0]
         
         # 2. Retrieve top matching chunks
         retrieved = self.vector_store.query(query_embedding, top_k=top_k)
@@ -283,19 +340,27 @@ class RAGEngine:
             f"Please formulate a precise, structured auditor response, complete with page and source citations."
         )
         
-        # 6. Call Gemini Generative Model
-        model = genai.GenerativeModel(
-            model_name="gemini-1.5-flash",
-            system_instruction=system_instruction
-        )
-        
-        response = model.generate_content(
-            prompt,
-            generation_config={"temperature": temperature}
-        )
+        # 6. Generate Response
+        if self.provider == "gemini":
+            model = genai.GenerativeModel(
+                model_name="gemini-1.5-flash",
+                system_instruction=system_instruction
+            )
+            response = model.generate_content(
+                prompt,
+                generation_config={"temperature": temperature}
+            )
+            answer_text = response.text
+        else:
+            answer_text = self._query_ollama(
+                prompt=prompt,
+                system_instruction=system_instruction,
+                model_name=ollama_model,
+                temperature=temperature
+            )
         
         return {
-            "answer": response.text,
+            "answer": answer_text,
             "sources": [
                 {
                     "source_id": i + 1,

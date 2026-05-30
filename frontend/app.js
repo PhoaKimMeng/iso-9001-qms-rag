@@ -4,14 +4,24 @@ const API_BASE = "http://127.0.0.1:8000";
 
 // App Global State
 let appState = {
+    provider: "gemini",       // "gemini" or "ollama"
     apiKeyConfigured: false,
+    ollamaActive: false,
     indexReady: false,
     indexedChunks: 0,
-    diagnosticChunks: []  // cached chunks for diagnostics tab
+    diagnosticChunks: []       // cached chunks for diagnostics tab
 };
 
 // DOM ELEMENT CACHE
 const elements = {
+    // RAG Provider Selection
+    providerSelect: document.getElementById("provider-select"),
+    geminiConfigGroup: document.getElementById("gemini-config-group"),
+    ollamaConfigGroup: document.getElementById("ollama-config-group"),
+    ollamaStatusDot: document.getElementById("ollama-status-dot"),
+    ollamaStatusText: document.getElementById("ollama-status-text"),
+    ollamaPullInstructions: document.getElementById("ollama-pull-instructions"),
+    
     // Sidebar config
     apiKeyInput: document.getElementById("api-key-input"),
     saveKeyBtn: document.getElementById("save-key-btn"),
@@ -19,7 +29,12 @@ const elements = {
     indexStatusText: document.getElementById("index-status-text"),
     chunksStatText: document.getElementById("chunks-stat-text"),
     ingestBtn: document.getElementById("ingest-btn"),
+    
+    // Tuning Controls (Model Selection Groups)
+    geminiModelsGroup: document.getElementById("gemini-models-group"),
+    ollamaModelsGroup: document.getElementById("ollama-models-group"),
     modelSelect: document.getElementById("model-select"),
+    ollamaModelSelect: document.getElementById("ollama-model-select"),
     topKSlider: document.getElementById("top-k-slider"),
     topKVal: document.getElementById("top-k-val"),
     tempSlider: document.getElementById("temp-slider"),
@@ -66,6 +81,9 @@ document.addEventListener("DOMContentLoaded", async () => {
     setupEventListeners();
     setupQuickQueries();
     
+    // Set initial provider view
+    handleProviderSwitch();
+    
     // Initial fetch of system status
     await checkSystemStatus();
     
@@ -75,17 +93,14 @@ document.addEventListener("DOMContentLoaded", async () => {
 
 // SLIDER CONFIGURATIONS
 function setupSliders() {
-    // Top-K Slider
     elements.topKSlider.addEventListener("input", (e) => {
         elements.topKVal.textContent = e.target.value;
     });
     
-    // Temperature Slider
     elements.tempSlider.addEventListener("input", (e) => {
         elements.tempVal.textContent = parseFloat(e.target.value).toFixed(2);
     });
     
-    // Diagnostics inspector slider
     elements.chunkInspectorSlider.addEventListener("input", (e) => {
         const index = parseInt(e.target.value);
         elements.chunkIndexVal.textContent = index;
@@ -99,11 +114,9 @@ function setupTabNavigation() {
         link.addEventListener("click", () => {
             const targetTab = link.getAttribute("data-tab");
             
-            // Toggle active tab link classes
             elements.tabLinks.forEach(l => l.classList.remove("active"));
             link.classList.add("active");
             
-            // Toggle active panel visibility
             elements.tabPanels.forEach(panel => {
                 if (panel.id === targetTab) {
                     panel.classList.add("active");
@@ -112,17 +125,127 @@ function setupTabNavigation() {
                 }
             });
             
-            // Trigger specific actions when tabs open
-            if (targetTab === "tab-diagnostics" && appState.indexReady) {
+            // Reload diagnostics for the current active provider
+            if (targetTab === "tab-diagnostics") {
                 loadDiagnostics();
             }
         });
     });
 }
 
+// PROVIDER SWITCH COORDINATION
+function handleProviderSwitch() {
+    const val = elements.providerSelect.value;
+    appState.provider = val;
+    
+    if (val === "gemini") {
+        elements.geminiConfigGroup.classList.remove("hidden");
+        elements.geminiModelsGroup.classList.remove("hidden");
+        
+        elements.ollamaConfigGroup.classList.add("hidden");
+        elements.ollamaModelsGroup.classList.add("hidden");
+        elements.ollamaPullInstructions.classList.add("hidden");
+    } else {
+        elements.geminiConfigGroup.classList.add("hidden");
+        elements.geminiModelsGroup.classList.add("hidden");
+        
+        elements.ollamaConfigGroup.classList.remove("hidden");
+        elements.ollamaModelsGroup.classList.remove("hidden");
+        
+        // Fetch local Ollama models list
+        fetchOllamaModels();
+    }
+    
+    // Clear chat messages to avoid mixing context between Gemini and Ollama
+    clearChat();
+}
+
+function clearChat() {
+    elements.chatMessages.innerHTML = `
+        <div class="chat-message assistant">
+            <div class="message-header">
+                <span class="avatar-icon">🛡️</span>
+                <strong>Lead QMS Auditor</strong>
+            </div>
+            <div class="message-text">
+                System mode switched to **${appState.provider.toUpperCase()}**.
+                <br><br>
+                Please verify the configuration state in the sidebar. Once the index status shows glowing green, I will be ready to perform Q&A with page-level citations!
+            </div>
+        </div>
+    `;
+}
+
+// OLLAMA MODEL TAGS FETCHER
+async function fetchOllamaModels() {
+    try {
+        const response = await fetch(`${API_BASE}/api/ollama/models`);
+        if (!response.ok) throw new Error("Failed to contact Ollama models tag endpoint.");
+        
+        const result = await response.json();
+        
+        elements.ollamaModelSelect.innerHTML = "";
+        
+        if (result.status === "offline") {
+            appState.ollamaActive = false;
+            elements.ollamaStatusDot.className = "dot dot-red";
+            elements.ollamaStatusText.textContent = "Ollama: Offline";
+            elements.ollamaPullInstructions.classList.remove("hidden");
+            elements.ollamaModelsGroup.classList.add("hidden");
+            return;
+        }
+        
+        appState.ollamaActive = true;
+        elements.ollamaStatusDot.className = "dot dot-green";
+        elements.ollamaStatusText.textContent = "Ollama: Connected";
+        
+        const models = result.models || [];
+        
+        // Filter out embedding models from LLM list (Ollama includes them in /api/tags)
+        const chatModels = models.filter(m => !m.includes("embed") && !m.includes("colbert"));
+        
+        if (chatModels.length === 0) {
+            elements.ollamaPullInstructions.classList.remove("hidden");
+            elements.ollamaModelsGroup.classList.add("hidden");
+            
+            // Add a temporary fallback
+            const opt = document.createElement("option");
+            opt.value = "";
+            opt.textContent = "No local models found";
+            elements.ollamaModelSelect.appendChild(opt);
+        } else {
+            elements.ollamaPullInstructions.classList.add("hidden");
+            elements.ollamaModelsGroup.classList.remove("hidden");
+            
+            chatModels.forEach(model => {
+                const opt = document.createElement("option");
+                opt.value = model;
+                opt.textContent = model;
+                elements.ollamaModelSelect.appendChild(opt);
+            });
+        }
+    } catch (err) {
+        console.error("Failed to query Ollama models:", err);
+        elements.ollamaStatusDot.className = "dot dot-red";
+        elements.ollamaStatusText.textContent = "Ollama: Service Error";
+    }
+}
+
 // GLOBAL EVENT HANDLERS
 function setupEventListeners() {
-    // 1. Save Key Action
+    // 0. Provider Selector change
+    elements.providerSelect.addEventListener("change", async () => {
+        handleProviderSwitch();
+        await checkSystemStatus();
+        
+        // Load tab statistics if active
+        const activeTab = document.querySelector(".tab-link.active").getAttribute("data-tab");
+        if (activeTab === "tab-diagnostics") {
+            loadDiagnostics();
+        }
+    });
+
+    // 1. Save Key Action (Gemini only)
     elements.saveKeyBtn.addEventListener("click", async () => {
         const key = elements.apiKeyInput.value.trim();
         if (!key) {
@@ -141,7 +264,7 @@ function setupEventListeners() {
             if (!response.ok) throw new Error("Failed to configure key.");
             
             alert("API Key configured successfully.");
-            elements.apiKeyInput.value = ""; // clear input visually
+            elements.apiKeyInput.value = "";
             await checkSystemStatus();
         } catch (err) {
             alert(`Error configuring API Key: ${err.message}`);
@@ -152,12 +275,13 @@ function setupEventListeners() {
     
     // 2. PDF Ingestion Action
     elements.ingestBtn.addEventListener("click", async () => {
+        const provUpper = appState.provider.toUpperCase();
         showOverlay(
-            "Processing QMS Ingestion...", 
-            "The API is parsing your ISO PDF standard, running sliding-window chunking, generating 1536-dimensional embeddings, and serializing your vector index. This takes 15-30 seconds."
+            `Processing ${provUpper} Ingestion...`, 
+            `The API is parsing your ISO PDF standard, running sliding-window chunking, generating local or cloud embeddings using ${provUpper}, and serializing the vector database. This takes 15-30 seconds.`
         );
         try {
-            const response = await fetch(`${API_BASE}/api/ingest?force=true`, {
+            const response = await fetch(`${API_BASE}/api/ingest?force=true&provider=${appState.provider}`, {
                 method: "POST"
             });
             
@@ -167,8 +291,14 @@ function setupEventListeners() {
             }
             
             const result = await response.json();
-            alert(`Ingestion Completed! ${result.chunks_count} vector chunks generated and indexed.`);
+            alert(`Ingestion Completed! ${result.chunks_count} vector chunks generated and indexed in ${provUpper} mode.`);
             await checkSystemStatus();
+            
+            // Reload diagnostics if tab active
+            const activeTab = document.querySelector(".tab-link.active").getAttribute("data-tab");
+            if (activeTab === "tab-diagnostics") {
+                loadDiagnostics();
+            }
         } catch (err) {
             alert(`Ingestion Error: ${err.message}`);
         } finally {
@@ -190,47 +320,84 @@ function setupEventListeners() {
 // SYSTEM STATUS CHECK
 async function checkSystemStatus() {
     try {
-        const response = await fetch(`${API_BASE}/api/status`);
+        const response = await fetch(`${API_BASE}/api/status?provider=${appState.provider}`);
         if (!response.ok) throw new Error("System status unreachable.");
         
         const status = await response.json();
         
         appState.apiKeyConfigured = status.api_key_configured;
+        appState.ollamaActive = status.ollama_active;
         appState.indexReady = status.index_ready;
         appState.indexedChunks = status.indexed_chunks;
         
         // Update index indicators in UI
         if (status.index_ready) {
             elements.indexStatusDot.className = "dot dot-green";
-            elements.indexStatusText.textContent = "Index: Ready";
+            elements.indexStatusText.textContent = `Index: Ready (${appState.provider.toUpperCase()})`;
             elements.chunksStatText.textContent = `${status.indexed_chunks} QMS chunks indexed.`;
             elements.ingestBtn.textContent = "Rebuild QMS Index";
         } else {
             elements.indexStatusDot.className = "dot dot-red";
-            elements.indexStatusText.textContent = "Index: Not Found";
+            elements.indexStatusText.textContent = `Index: Not Found (${appState.provider.toUpperCase()})`;
             elements.chunksStatText.textContent = "Ingestion required.";
             elements.ingestBtn.textContent = "Ingest & Embed PDF";
         }
         
-        // Manage active states based on API Key configuration
-        if (status.api_key_configured) {
-            elements.ingestBtn.disabled = false;
-            elements.apiKeyInput.placeholder = "•••••••••••••••••••••••• (API Key Active)";
-            
-            if (status.index_ready) {
-                elements.chatInput.disabled = false;
-                elements.sendBtn.disabled = false;
-                elements.chatInput.placeholder = "Ask about ISO 9001:2015 requirements, audits, or implementation...";
+        // Manage active states based on Provider selection
+        if (appState.provider === "gemini") {
+            if (status.api_key_configured) {
+                elements.ingestBtn.disabled = false;
+                elements.apiKeyInput.placeholder = "•••••••••••••••••••••••• (API Key Active)";
+                
+                if (status.index_ready) {
+                    elements.chatInput.disabled = false;
+                    elements.sendBtn.disabled = false;
+                    elements.chatInput.placeholder = "Ask about ISO 9001:2015 requirements, audits, or implementation...";
+                } else {
+                    elements.chatInput.disabled = true;
+                    elements.sendBtn.disabled = true;
+                    elements.chatInput.placeholder = "⚠️ Complete PDF Ingestion in the sidebar first...";
+                }
             } else {
+                elements.ingestBtn.disabled = true;
                 elements.chatInput.disabled = true;
                 elements.sendBtn.disabled = true;
-                elements.chatInput.placeholder = "⚠️ Complete PDF Ingestion in the sidebar first...";
+                elements.chatInput.placeholder = "⚠️ Save a valid Gemini API Key in the sidebar first...";
             }
         } else {
-            elements.ingestBtn.disabled = true;
-            elements.chatInput.disabled = true;
-            elements.sendBtn.disabled = true;
-            elements.chatInput.placeholder = "⚠️ Save a valid Gemini API Key in the sidebar first...";
+            // Ollama Mode
+            elements.apiKeyInput.placeholder = "Ollama mode active";
+            
+            // Check if server is active
+            if (status.ollama_active) {
+                elements.ollamaStatusDot.className = "dot dot-green";
+                elements.ollamaStatusText.textContent = "Ollama: Connected";
+                elements.ingestBtn.disabled = false;
+                
+                // Verify if local models are loaded
+                const hasLocalModels = elements.ollamaModelSelect.value !== "";
+                
+                if (status.index_ready && hasLocalModels) {
+                    elements.chatInput.disabled = false;
+                    elements.sendBtn.disabled = false;
+                    elements.chatInput.placeholder = "Ollama Local Auditor is active. Ask any question...";
+                } else if (!status.index_ready) {
+                    elements.chatInput.disabled = true;
+                    elements.sendBtn.disabled = true;
+                    elements.chatInput.placeholder = "⚠️ Complete PDF Ingestion in the sidebar first...";
+                } else {
+                    elements.chatInput.disabled = true;
+                    elements.sendBtn.disabled = true;
+                    elements.chatInput.placeholder = "⚠️ Pull a local model first (see sidebar commands)...";
+                }
+            } else {
+                elements.ollamaStatusDot.className = "dot dot-red";
+                elements.ollamaStatusText.textContent = "Ollama: Offline";
+                elements.ingestBtn.disabled = true;
+                elements.chatInput.disabled = true;
+                elements.sendBtn.disabled = true;
+                elements.chatInput.placeholder = "⚠️ Start local Ollama daemon first...";
+            }
         }
     } catch (err) {
         console.error("Status check failed:", err);
@@ -244,7 +411,7 @@ function setupQuickQueries() {
         btn.addEventListener("click", () => {
             const query = btn.getAttribute("data-query");
             if (elements.chatInput.disabled) {
-                alert("Please configure your API Key and ingest the PDF in the sidebar first.");
+                alert("Please complete the required sidebar settings for this provider first.");
                 return;
             }
             processUserQuery(query);
@@ -254,28 +421,28 @@ function setupQuickQueries() {
 
 // Q&A QUERY PROCESSOR
 async function processUserQuery(queryText) {
-    // 1. Append User Message
     appendMessage("user", "User", queryText);
-    
-    // 2. Append Assistant Typing Indicator
     const typingId = appendTypingIndicator();
     
     try {
         const top_k = parseInt(elements.topKSlider.value);
         const temperature = parseFloat(elements.tempSlider.value);
         
+        const payload = {
+            query: queryText,
+            top_k: top_k,
+            temperature: temperature,
+            provider: appState.provider,
+            ollama_model: elements.ollamaModelSelect.value || "llama3"
+        };
+        
         // Call Backend API
         const response = await fetch(`${API_BASE}/api/query`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                query: queryText,
-                top_k: top_k,
-                temperature: temperature
-            })
+            body: JSON.stringify(payload)
         });
         
-        // Remove typing indicator
         removeTypingIndicator(typingId);
         
         if (!response.ok) {
@@ -284,8 +451,6 @@ async function processUserQuery(queryText) {
         }
         
         const result = await response.json();
-        
-        // 3. Append Assistant Answer with Sources
         appendMessage("assistant", "Lead QMS Auditor", result.answer, result.sources);
         
     } catch (err) {
@@ -299,7 +464,6 @@ function appendMessage(role, senderName, text, sources = null) {
     const msgDiv = document.createElement("div");
     msgDiv.className = `chat-message ${role}`;
     
-    // Formatting basic markdown syntax (like **bold** and newlines)
     const formattedText = formatMarkdown(text);
     
     let sourcesHTML = "";
@@ -369,34 +533,25 @@ function scrollToBottom() {
     elements.chatMessages.scrollTop = elements.chatMessages.scrollHeight;
 }
 
-// Basic markdown to HTML renderer
 function formatMarkdown(text) {
-    // Escape standard tags
     let html = text
         .replace(/&/g, "&amp;")
         .replace(/</g, "&lt;")
         .replace(/>/g, "&gt;");
         
-    // Bold matches (**text**)
     html = html.replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
     
-    // Checklists [ ] and [x]
     html = html.replace(/\[ \]/g, "☐");
     html = html.replace(/\[x\]/g, "☑");
     
-    // Process bullet points
     html = html.replace(/^\s*-\s+(.*)$/gm, "<li>$1</li>");
-    // Wrap groups of <li> in <ul>
-    // Note: This is a basic formatter, but works wonderfully for standard LLM streams
     html = html.replace(/(<li>.*<\/li>)/s, "<ul>$1</ul>");
     
-    // Line breaks
     html = html.replace(/\n/g, "<br>");
     
     return html;
 }
 
-// Toggle Source expander collapse
 window.toggleSources = function(id) {
     const panel = document.getElementById(id);
     const icon = document.getElementById(`icon_${id}`);
@@ -418,7 +573,7 @@ async function loadClauseDatabase() {
         
         const database = await response.json();
         
-        elements.clausesContainer.innerHTML = ""; // Clear loader
+        elements.clausesContainer.innerHTML = "";
         
         for (const [title, details] of Object.entries(database)) {
             const card = document.createElement("div");
@@ -448,25 +603,22 @@ async function loadClauseDatabase() {
     }
 }
 
-// Pre-fill chat from the Clause Navigator
 window.queryNavigator = function(query) {
     if (elements.chatInput.disabled) {
-        alert("Please configure your API Key and ingest the PDF in the sidebar first.");
+        alert("Please complete the required sidebar settings for this provider first.");
         return;
     }
     
-    // Switch to Tab 1 (Chat)
     const chatTabLink = document.querySelector('[data-tab="tab-chat"]');
     chatTabLink.click();
     
-    // Start processing query
     processUserQuery(query);
 };
 
 // TAB 3: DIAGNOSTICS LOAD
 async function loadDiagnostics() {
     try {
-        const response = await fetch(`${API_BASE}/api/stats`);
+        const response = await fetch(`${API_BASE}/api/stats?provider=${appState.provider}`);
         if (!response.ok) throw new Error("Failed to load diagnostics.");
         
         const stats = await response.json();
@@ -480,25 +632,23 @@ async function loadDiagnostics() {
         elements.diagnosticsEmptyContent.classList.add("hidden");
         elements.diagnosticsReadyContent.classList.remove("hidden");
         
-        // Cache diagnostics chunks globally
         appState.diagnosticChunks = stats.chunks;
         
-        // Update stats metrics
         elements.metricPages.textContent = stats.total_pages;
         elements.metricChunks.textContent = stats.chunks_count;
         elements.metricAvgLen.textContent = stats.avg_chunk_length;
         elements.metricTotalChars.textContent = stats.total_characters.toLocaleString();
         
-        // Update slider limit
         elements.chunkInspectorSlider.max = stats.chunks_count - 1;
         elements.chunkInspectorSlider.value = 0;
         elements.chunkIndexVal.textContent = 0;
         
-        // Render index 0
         renderSelectedChunk(0);
         
     } catch (err) {
         console.error("Diagnostics load failed:", err);
+        elements.diagnosticsReadyContent.classList.add("hidden");
+        elements.diagnosticsEmptyContent.classList.remove("hidden");
     }
 }
 

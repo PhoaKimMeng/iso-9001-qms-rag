@@ -1,6 +1,7 @@
 import os
 import json
-from fastapi import FastAPI, HTTPException, Body, Depends
+import requests
+from fastapi import FastAPI, HTTPException, Body, Depends, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from typing import List, Dict, Any, Optional
@@ -14,12 +15,11 @@ load_dotenv()
 
 app = FastAPI(
     title="ISO 9001:2015 QMS RAG API",
-    description="Backend API serving the QMS semantic search and auditor generator.",
-    version="1.0.0"
+    description="Backend API serving the QMS semantic search and auditor generator (Gemini & Ollama).",
+    version="1.1.0"
 )
 
 # Enable CORS (Cross-Origin Resource Sharing)
-# This allows static local HTML frontend files (e.g. running on file:// or local servers) to easily call the API.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -28,14 +28,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Global API Key storage and Engine instance
+# Global API Key storage
 API_KEY_FILE = os.path.join(os.path.dirname(__file__), ".env")
-_rag_engine: Optional[RAGEngine] = None
 
-def get_engine() -> RAGEngine:
-    """Helper dependency to retrieve or initialize the RAGEngine."""
-    global _rag_engine
-    
+def get_gemini_key() -> str:
+    """Helper to retrieve the configured Gemini API key."""
     # 1. Try reading from environment variable
     api_key = os.environ.get("GEMINI_API_KEY", "")
     
@@ -46,17 +43,31 @@ def get_engine() -> RAGEngine:
                 if line.startswith("GEMINI_API_KEY="):
                     api_key = line.split("=", 1)[1].strip()
                     break
-                    
-    if not api_key:
-        raise HTTPException(
-            status_code=401, 
-            detail="Gemini API Key is not configured. Please supply a key in the settings panel."
-        )
-        
-    if _rag_engine is None or _rag_engine.api_key != api_key:
-        _rag_engine = RAGEngine(api_key=api_key)
-        
-    return _rag_engine
+    return api_key
+
+
+def get_engine(provider: str = "gemini") -> RAGEngine:
+    """Factory helper to initialize RAGEngine on the fly depending on provider."""
+    provider = provider.lower().strip()
+    if provider == "gemini":
+        api_key = get_gemini_key()
+        if not api_key:
+            raise HTTPException(
+                status_code=401, 
+                detail="Gemini API Key is not configured. Please supply a key in the settings panel."
+            )
+        return RAGEngine(api_key=api_key, provider="gemini")
+    else:
+        # Verify Ollama service is active
+        try:
+            resp = requests.get("http://127.0.0.1:11434/api/tags", timeout=3)
+            resp.raise_for_status()
+        except Exception:
+            raise HTTPException(
+                status_code=503,
+                detail="Local Ollama service is offline. Please launch the Ollama app on your computer."
+            )
+        return RAGEngine(api_key="", provider="ollama")
 
 
 # Pydantic Schemas for Requests & Responses
@@ -64,6 +75,8 @@ class QueryRequest(BaseModel):
     query: str = Field(..., description="The QMS/ISO-related query to ask.")
     top_k: int = Field(5, ge=1, le=10, description="Number of source passages to retrieve.")
     temperature: float = Field(0.1, ge=0.0, le=1.0, description="Generative model temperature.")
+    provider: str = Field("gemini", description="Selected provider pathway: 'gemini' or 'ollama'.")
+    ollama_model: str = Field("llama3", description="Specific local Ollama model to use for chat.")
 
 class APIKeyRequest(BaseModel):
     api_key: str = Field(..., description="The Gemini API key to configure.")
@@ -146,16 +159,24 @@ CLAUSES_DATABASE = {
 # --- REST ENDPOINTS ---
 
 @app.get("/api/status")
-def get_status():
-    """Returns the current state of the backend API key config and vector store index availability."""
-    # Check key presence
-    api_key_set = bool(os.environ.get("GEMINI_API_KEY", ""))
-    if not api_key_set and os.path.exists(API_KEY_FILE):
-        with open(API_KEY_FILE, "r") as f:
-            api_key_set = any(line.startswith("GEMINI_API_KEY=") for line in f)
-            
-    # Check index file presence
-    index_file = os.path.join(os.path.dirname(__file__), "vector_store.json")
+def get_status(provider: str = "gemini"):
+    """Returns the current state of selected provider, keys, and isolated index files."""
+    provider = provider.lower().strip()
+    
+    # 1. Evaluate Gemini status
+    api_key_set = bool(get_gemini_key())
+    
+    # 2. Evaluate local Ollama status
+    ollama_active = False
+    try:
+        resp = requests.get("http://127.0.0.1:11434/api/tags", timeout=2)
+        ollama_active = (resp.status_code == 200)
+    except:
+        pass
+        
+    # 3. Evaluate matching index existence
+    index_name = "vector_store_gemini.json" if provider == "gemini" else "vector_store_ollama.json"
+    index_file = os.path.join(os.path.dirname(__file__), index_name)
     index_exists = os.path.exists(index_file)
     
     num_chunks = 0
@@ -169,6 +190,7 @@ def get_status():
             
     return {
         "api_key_configured": api_key_set,
+        "ollama_active": ollama_active,
         "index_ready": index_exists,
         "indexed_chunks": num_chunks
     }
@@ -178,25 +200,34 @@ def get_status():
 def configure_key(payload: APIKeyRequest):
     """Saves a user-submitted Gemini API Key locally into the backend's .env file."""
     try:
-        # Write/Update .env file in the backend directory
         with open(API_KEY_FILE, "w") as f:
             f.write(f"GEMINI_API_KEY={payload.api_key}\n")
-            
-        # Update OS environment context
         os.environ["GEMINI_API_KEY"] = payload.api_key
-        
-        # Reset local cache
-        global _rag_engine
-        _rag_engine = RAGEngine(api_key=payload.api_key)
-        
         return {"status": "success", "message": "Gemini API Key configured successfully."}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to write key: {e}")
 
 
+@app.get("/api/ollama/models")
+def get_ollama_models():
+    """Queries the local Ollama daemon and lists currently pulled model names."""
+    try:
+        response = requests.get("http://127.0.0.1:11434/api/tags", timeout=3)
+        response.raise_for_status()
+        data = response.json()
+        models = [item["name"] for item in data.get("models", [])]
+        return {"status": "success", "models": models}
+    except Exception as e:
+        # If server is offline, return success but empty list so UI doesn't crash
+        return {"status": "offline", "models": [], "error": str(e)}
+
+
 @app.post("/api/ingest")
-def trigger_ingest(force: bool = False, engine: RAGEngine = Depends(get_engine)):
-    """Triggers the PDF standard extraction, semantic chunking, embedding, and indexing."""
+def trigger_ingest(force: bool = False, provider: str = "gemini"):
+    """Triggers the PDF standard extraction, chunking, and embedding creation on selected provider."""
+    # Resolve engine dynamically
+    engine = get_engine(provider=provider)
+    
     # Resolve the PDF standard path (located in parent workspace directory)
     pdf_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "ISO-9001-2015-Fifth-Edition.pdf"))
     
@@ -212,21 +243,24 @@ def trigger_ingest(force: bool = False, engine: RAGEngine = Depends(get_engine))
             "status": "success",
             "chunks_count": chunks_count,
             "loaded_from_cache": loaded_from_cache,
-            "message": f"Successfully processed PDF into {chunks_count} vector chunks."
+            "message": f"Successfully processed PDF into {chunks_count} vector chunks using {provider.upper()}."
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed PDF Ingestion: {e}")
 
 
 @app.post("/api/query")
-def trigger_query(payload: QueryRequest, engine: RAGEngine = Depends(get_engine)):
+def trigger_query(payload: QueryRequest):
     """Executes a semantic vector Q&A query and returns a citation-backed LLM response."""
-    # Ensure index exists before query
-    index_file = os.path.join(os.path.dirname(__file__), "vector_store.json")
+    # Resolve engine dynamically
+    engine = get_engine(provider=payload.provider)
+    
+    # Ensure matching index exists before query
+    index_file = os.path.join(os.path.dirname(__file__), engine.index_name)
     if not os.path.exists(index_file):
         raise HTTPException(
             status_code=400, 
-            detail="The QMS vector store index has not been built yet. Please run ingestion first."
+            detail=f"The QMS vector store index has not been built yet for {payload.provider.upper()} mode. Please run Ingestion first."
         )
         
     # Lazy load vector index if it hasn't been loaded in engine yet
@@ -237,7 +271,8 @@ def trigger_query(payload: QueryRequest, engine: RAGEngine = Depends(get_engine)
         result = engine.query(
             user_query=payload.query, 
             top_k=payload.top_k, 
-            temperature=payload.temperature
+            temperature=payload.temperature,
+            ollama_model=payload.ollama_model
         )
         return result
     except Exception as e:
@@ -251,9 +286,11 @@ def get_clauses():
 
 
 @app.get("/api/stats")
-def get_stats():
-    """Extracts diagnostic statistics from the indexed vector store."""
-    index_file = os.path.join(os.path.dirname(__file__), "vector_store.json")
+def get_stats(provider: str = "gemini"):
+    """Extracts diagnostic statistics from the selected provider's indexed vector store."""
+    index_name = "vector_store_gemini.json" if provider.lower().strip() == "gemini" else "vector_store_ollama.json"
+    index_file = os.path.join(os.path.dirname(__file__), index_name)
+    
     if not os.path.exists(index_file):
         raise HTTPException(status_code=400, detail="No diagnostic index found. Index is empty.")
         
@@ -276,7 +313,7 @@ def get_stats():
             "chunks_count": total_chunks,
             "avg_chunk_length": round(avg_chunk),
             "total_characters": total_chars,
-            "chunks": chunks  # returns list of chunks for custom indexing sample
+            "chunks": chunks
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed reading diagnostics: {e}")

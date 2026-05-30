@@ -18,8 +18,21 @@
             <p class="sidebar-subtitle">ISO 9001:2015 QMS Auditor Settings</p>
             <div class="glow-divider"></div>
 
-            <!-- API Configuration Section -->
+            <!-- RAG Provider Selection Section -->
             <div class="config-section">
+                <h3>🔌 RAG Engine Provider</h3>
+                <div class="form-group">
+                    <label for="provider-select">Select Mode</label>
+                    <select id="provider-select">
+                        <option value="gemini">Google Gemini (Cloud)</option>
+                        <option value="ollama">Ollama (Local Offline)</option>
+                    </select>
+                </div>
+            </div>
+            <div class="glow-divider"></div>
+
+            <!-- Gemini API Configuration Section -->
+            <div id="gemini-config-group" class="config-section">
                 <h3>🔑 API Authentication</h3>
                 <div class="form-group">
                     <label for="api-key-input">Enter Gemini API Key</label>
@@ -27,6 +40,23 @@
                     <p class="help-text">Get an API key from <a href="https://aistudio.google.com/" target="_blank">Google AI Studio</a></p>
                 </div>
                 <button id="save-key-btn" class="btn secondary-btn">Save API Key</button>
+            </div>
+
+            <!-- Ollama Configuration Section -->
+            <div id="ollama-config-group" class="config-section hidden">
+                <h3>🦙 Local Ollama Server</h3>
+                <div class="status-container">
+                    <div class="status-indicator">
+                        <span id="ollama-status-dot" class="dot dot-red"></span>
+                        <span id="ollama-status-text" class="status-text">Ollama: Checking...</span>
+                    </div>
+                </div>
+                <!-- Pull Instructions Helper Card -->
+                <div id="ollama-pull-instructions" class="status-container error-status hidden" style="background-color: var(--color-red-bg); border-color: rgba(239, 68, 68, 0.3);">
+                    <p class="small-text" style="color: #fca5a5; font-weight: 600;">⚠️ No local models found!</p>
+                    <p class="small-text" style="color: #e2e8f0; margin-top: 4px; line-height: 1.4;">Run these commands in your local terminal to pull standard models:</p>
+                    <pre style="background: rgba(0,0,0,0.5); padding: 8px; border-radius: 4px; font-size: 0.72rem; margin-top: 6px; font-family: 'Courier Prime', monospace; color: #a5b4fc; white-space: pre-wrap; line-height: 1.3;">ollama pull llama3&#10;ollama pull nomic-embed-text</pre>
+                </div>
             </div>
             <div class="glow-divider"></div>
 
@@ -47,7 +77,9 @@
             <!-- Tuning Controls Section -->
             <div class="config-section">
                 <h3>🎛️ Auditor Tuning</h3>
-                <div class="form-group">
+                
+                <!-- Gemini Generative Model Select -->
+                <div id="gemini-models-group" class="form-group">
                     <label for="model-select">Generative Model</label>
                     <select id="model-select">
                         <option value="gemini-1.5-flash">gemini-1.5-flash (Fast)</option>
@@ -55,6 +87,15 @@
                         <option value="gemini-2.5-flash">gemini-2.5-flash (Balanced)</option>
                     </select>
                 </div>
+
+                <!-- Ollama Local Models Select -->
+                <div id="ollama-models-group" class="form-group hidden">
+                    <label for="ollama-model-select">Choose Local Model</label>
+                    <select id="ollama-model-select">
+                        <!-- Loaded dynamically via API -->
+                    </select>
+                </div>
+
                 <div class="form-group">
                     <label for="top-k-slider">Retrieved Source Count (Top-k): <span id="top-k-val">5</span></label>
                     <input type="range" id="top-k-slider" min="3" max="8" value="5">
