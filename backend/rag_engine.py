@@ -287,6 +287,53 @@ class RAGEngine:
                 f"by running 'ollama pull {model_name}' and Ollama is active. Error: {e}"
             )
 
+    def _rewrite_query(self, query: str, ollama_model: str, gemini_model: str, cohere_model: str) -> str:
+        """Uses the active LLM provider to rewrite the query to be optimized for semantic search."""
+        system_instruction = (
+            "You are a search query optimizer. Your job is to rewrite a user query about ISO 9001:2015 "
+            "into a direct, keyword-rich search query optimized for finding relevant standard clauses in a PDF document. "
+            "Keep the query focused and brief. Return ONLY the rewritten query text, with absolutely no preamble, introductory text, "
+            "or enclosing quotation marks."
+        )
+        prompt = f"Optimize this user query for vector database semantic search: {query}"
+        
+        try:
+            if self.provider == "gemini":
+                model = genai.GenerativeModel(
+                    model_name=gemini_model,
+                    system_instruction=system_instruction
+                )
+                response = model.generate_content(
+                    prompt,
+                    generation_config={"temperature": 0.1}
+                )
+                rewritten = response.text.strip()
+            elif self.provider == "cohere":
+                rewritten = self._query_cohere(
+                    prompt=prompt,
+                    system_instruction=system_instruction,
+                    model_name=cohere_model,
+                    temperature=0.1
+                ).strip()
+            else:
+                rewritten = self._query_ollama(
+                    prompt=prompt,
+                    system_instruction=system_instruction,
+                    model_name=ollama_model,
+                    temperature=0.1
+                ).strip()
+            
+            # Clean up the output if the model added quotation marks
+            if rewritten.startswith('"') and rewritten.endswith('"'):
+                rewritten = rewritten[1:-1].strip()
+            elif rewritten.startswith("'") and rewritten.endswith("'"):
+                rewritten = rewritten[1:-1].strip()
+                
+            return rewritten
+        except Exception as e:
+            print(f"Warning: Query rewrite failed: {e}")
+            return query  # Fallback to the original query if LLM rewrite fails
+
     def ingest_pdf(self, pdf_path: str, force_rebuild: bool = False) -> Tuple[int, bool]:
         """
         Parses, chunks, embeds, and indexes a PDF.
@@ -353,21 +400,48 @@ class RAGEngine:
         if not self.vector_store.chunks:
             raise ValueError("No chunks have been indexed. Please ingest the PDF document first.")
             
-        # 1. Embed query
-        if self.provider == "gemini":
-            query_resp = genai.embed_content(
-                model="models/gemini-embedding-001",
-                content=user_query,
-                task_type="retrieval_query"
-            )
-            query_embedding = query_resp["embedding"]
-        elif self.provider == "cohere":
-            query_embedding = self._get_embeddings_cohere([user_query], input_type="search_query")[0]
-        else:
-            query_embedding = self._get_embeddings_ollama([user_query])[0]
+        # 1. Embed query (with bounded retry if top score < 0.5)
+        current_query = user_query
+        retrieved = []
+        max_retries = 2
+        attempts_log = []
         
-        # 2. Retrieve top matching chunks
-        retrieved = self.vector_store.query(query_embedding, top_k=top_k)
+        for attempt in range(max_retries + 1):
+            if self.provider == "gemini":
+                query_resp = genai.embed_content(
+                    model="models/gemini-embedding-001",
+                    content=current_query,
+                    task_type="retrieval_query"
+                )
+                query_embedding = query_resp["embedding"]
+            elif self.provider == "cohere":
+                query_embedding = self._get_embeddings_cohere([current_query], input_type="search_query")[0]
+            else:
+                query_embedding = self._get_embeddings_ollama([current_query])[0]
+            
+            # 2. Retrieve top matching chunks
+            retrieved = self.vector_store.query(query_embedding, top_k=top_k)
+            
+            # Check similarity score of the top retrieved chunk
+            top_score = retrieved[0][1] if retrieved else 0.0
+            attempts_log.append({
+                "attempt": attempt,
+                "query": current_query,
+                "top_score": top_score
+            })
+            
+            if top_score >= 0.5 or attempt == max_retries:
+                # Similarity is good enough, or we've hit max retries
+                break
+                
+            # Otherwise, rewrite query for retry
+            print(f"Top similarity score ({top_score:.3f}) < 0.5. Rewriting query and retrying (Attempt {attempt + 1}/{max_retries})...")
+            current_query = self._rewrite_query(
+                query=current_query,
+                ollama_model=ollama_model,
+                gemini_model=gemini_model,
+                cohere_model=cohere_model
+            )
         
         # 3. Build Context String
         context_parts = []
@@ -437,5 +511,6 @@ class RAGEngine:
                     "score": score
                 }
                 for i, (chunk, score) in enumerate(retrieved)
-            ]
+            ],
+            "query_attempts": attempts_log
         }

@@ -364,7 +364,8 @@ def trigger_query(payload: QueryRequest):
             top_k=payload.top_k, 
             temperature=payload.temperature,
             ollama_model=payload.ollama_model,
-            gemini_model=payload.gemini_model
+            gemini_model=payload.gemini_model,
+            cohere_model=payload.cohere_model
         )
         return result
     except Exception as e:
