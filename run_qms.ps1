@@ -10,7 +10,7 @@ $BackendProcess = Start-Process python -ArgumentList "-m uvicorn main:app --app-
 
 # 2. Start the HTTP static server for the HTML/CSS/JS frontend in the background
 Write-Host "🌐 Launching Vanilla Web Frontend on http://localhost:8080..." -ForegroundColor Yellow
-$FrontendProcess = Start-Process python -ArgumentList "-m http.server 8080 --directory frontend" -NoNewWindow -PassThru
+$FrontendProcess = Start-Process python -ArgumentList "-m http.server 8080 --directory docs" -NoNewWindow -PassThru
 
 # 3. Wait for processes to spin up and load
 Start-Sleep -Seconds 3
