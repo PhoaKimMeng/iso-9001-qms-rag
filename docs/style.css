@@ -363,6 +363,11 @@ input[type="range"]::-webkit-slider-thumb:hover {
     display: flex;
 }
 
+#tab-navigator, #tab-diagnostics, #tab-trace {
+    overflow-y: auto;
+    padding-right: 4px;
+}
+
 /* TAB 1: Q&A CHAT INTERFACE */
 .quick-queries-section {
     margin-bottom: 20px;
