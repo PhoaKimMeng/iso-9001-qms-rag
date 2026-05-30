@@ -46,6 +46,45 @@ def get_gemini_key() -> str:
     return api_key
 
 
+def get_cohere_key() -> str:
+    """Helper to retrieve the configured Cohere API key."""
+    # 1. Try reading from environment variable
+    api_key = os.environ.get("COHERE_API_KEY", "")
+    
+    # 2. Try loading from local .env if env var is empty
+    if not api_key and os.path.exists(API_KEY_FILE):
+        with open(API_KEY_FILE, "r") as f:
+            for line in f:
+                if line.startswith("COHERE_API_KEY="):
+                    api_key = line.split("=", 1)[1].strip()
+                    break
+    return api_key
+
+
+def save_env_key(key_name: str, key_val: str):
+    """Safely updates or inserts a key-value pair in the local .env file without erasing other variables."""
+    lines = []
+    key_written = False
+    try:
+        if os.path.exists(API_KEY_FILE):
+            with open(API_KEY_FILE, "r") as f:
+                for line in f:
+                    if line.strip().startswith(f"{key_name}="):
+                        lines.append(f"{key_name}={key_val}\n")
+                        key_written = True
+                    else:
+                        lines.append(line)
+        if not key_written:
+            lines.append(f"{key_name}={key_val}\n")
+            
+        with open(API_KEY_FILE, "w") as f:
+            f.writelines(lines)
+    except Exception as e:
+        print(f"Warning: Failed to write {key_name} to local .env (might be read-only filesystem): {e}")
+        
+    os.environ[key_name] = key_val
+
+
 def get_engine(provider: str = "gemini") -> RAGEngine:
     """Factory helper to initialize RAGEngine on the fly depending on provider."""
     provider = provider.lower().strip()
@@ -57,6 +96,14 @@ def get_engine(provider: str = "gemini") -> RAGEngine:
                 detail="Gemini API Key is not configured. Please supply a key in the settings panel."
             )
         return RAGEngine(api_key=api_key, provider="gemini")
+    elif provider == "cohere":
+        api_key = get_cohere_key()
+        if not api_key:
+            raise HTTPException(
+                status_code=401,
+                detail="Cohere API Key is not configured. Please supply a key in the settings panel."
+            )
+        return RAGEngine(api_key=api_key, provider="cohere")
     else:
         # Verify Ollama service is active
         try:
@@ -75,9 +122,10 @@ class QueryRequest(BaseModel):
     query: str = Field(..., description="The QMS/ISO-related query to ask.")
     top_k: int = Field(5, ge=1, le=10, description="Number of source passages to retrieve.")
     temperature: float = Field(0.1, ge=0.0, le=1.0, description="Generative model temperature.")
-    provider: str = Field("gemini", description="Selected provider pathway: 'gemini' or 'ollama'.")
+    provider: str = Field("gemini", description="Selected provider pathway: 'gemini', 'ollama', or 'cohere'.")
     ollama_model: str = Field("llama3", description="Specific local Ollama model to use for chat.")
     gemini_model: str = Field("gemini-2.5-flash", description="Specific Gemini model to use for chat.")
+    cohere_model: str = Field("command-r", description="Specific Cohere model to use for chat.")
 
 class APIKeyRequest(BaseModel):
     api_key: str = Field(..., description="The Gemini API key to configure.")
@@ -164,9 +212,13 @@ def get_status(provider: str = "gemini"):
     """Returns the current state of selected provider, keys, and isolated index files."""
     provider = provider.lower().strip()
     
-    # 1. Evaluate Gemini status
-    api_key_set = bool(get_gemini_key())
-    
+    # 1. Evaluate corresponding provider key status
+    api_key_set = False
+    if provider == "gemini":
+        api_key_set = bool(get_gemini_key())
+    elif provider == "cohere":
+        api_key_set = bool(get_cohere_key())
+        
     # 2. Evaluate local Ollama status
     ollama_active = False
     try:
@@ -176,7 +228,13 @@ def get_status(provider: str = "gemini"):
         pass
         
     # 3. Evaluate matching index existence
-    index_name = "vector_store_gemini.json" if provider == "gemini" else "vector_store_ollama.json"
+    if provider == "gemini":
+        index_name = "vector_store_gemini.json"
+    elif provider == "cohere":
+        index_name = "vector_store_cohere.json"
+    else:
+        index_name = "vector_store_ollama.json"
+        
     index_file = os.path.join(os.path.dirname(__file__), index_name)
     index_exists = os.path.exists(index_file)
     
@@ -201,10 +259,18 @@ def get_status(provider: str = "gemini"):
 def configure_key(payload: APIKeyRequest):
     """Saves a user-submitted Gemini API Key locally into the backend's .env file."""
     try:
-        with open(API_KEY_FILE, "w") as f:
-            f.write(f"GEMINI_API_KEY={payload.api_key}\n")
-        os.environ["GEMINI_API_KEY"] = payload.api_key
+        save_env_key("GEMINI_API_KEY", payload.api_key)
         return {"status": "success", "message": "Gemini API Key configured successfully."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to write key: {e}")
+
+
+@app.post("/api/configure-cohere-key")
+def configure_cohere_key(payload: APIKeyRequest):
+    """Saves a user-submitted Cohere API Key locally into the backend's .env file."""
+    try:
+        save_env_key("COHERE_API_KEY", payload.api_key)
+        return {"status": "success", "message": "Cohere API Key configured successfully."}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to write key: {e}")
 

@@ -7,8 +7,9 @@ const API_BASE = window.location.hostname === "localhost" || window.location.hos
 
 // App Global State
 let appState = {
-    provider: "gemini",       // "gemini" or "ollama"
+    provider: "gemini",       // "gemini", "cohere", or "ollama"
     apiKeyConfigured: false,
+    cohereKeyConfigured: false,
     ollamaActive: false,
     indexReady: false,
     indexedChunks: 0,
@@ -21,6 +22,7 @@ const elements = {
     // RAG Provider Selection
     providerSelect: document.getElementById("provider-select"),
     geminiConfigGroup: document.getElementById("gemini-config-group"),
+    cohereConfigGroup: document.getElementById("cohere-config-group"),
     ollamaConfigGroup: document.getElementById("ollama-config-group"),
     ollamaStatusDot: document.getElementById("ollama-status-dot"),
     ollamaStatusText: document.getElementById("ollama-status-text"),
@@ -29,6 +31,8 @@ const elements = {
     // Sidebar config
     apiKeyInput: document.getElementById("api-key-input"),
     saveKeyBtn: document.getElementById("save-key-btn"),
+    cohereApiKeyInput: document.getElementById("cohere-api-key-input"),
+    saveCohereKeyBtn: document.getElementById("save-cohere-key-btn"),
     indexStatusDot: document.getElementById("index-status-dot"),
     indexStatusText: document.getElementById("index-status-text"),
     chunksStatText: document.getElementById("chunks-stat-text"),
@@ -41,8 +45,10 @@ const elements = {
     
     // Tuning Controls (Model Selection Groups)
     geminiModelsGroup: document.getElementById("gemini-models-group"),
+    cohereModelsGroup: document.getElementById("cohere-models-group"),
     ollamaModelsGroup: document.getElementById("ollama-models-group"),
     modelSelect: document.getElementById("model-select"),
+    cohereModelSelect: document.getElementById("cohere-model-select"),
     ollamaModelSelect: document.getElementById("ollama-model-select"),
     topKSlider: document.getElementById("top-k-slider"),
     topKVal: document.getElementById("top-k-val"),
@@ -147,25 +153,29 @@ function handleProviderSwitch() {
     const val = elements.providerSelect.value;
     appState.provider = val;
     
+    // Hide all provider-specific blocks by default
+    elements.geminiConfigGroup.classList.add("hidden");
+    elements.geminiModelsGroup.classList.add("hidden");
+    elements.cohereConfigGroup.classList.add("hidden");
+    elements.cohereModelsGroup.classList.add("hidden");
+    elements.ollamaConfigGroup.classList.add("hidden");
+    elements.ollamaModelsGroup.classList.add("hidden");
+    elements.ollamaPullInstructions.classList.add("hidden");
+    
     if (val === "gemini") {
         elements.geminiConfigGroup.classList.remove("hidden");
         elements.geminiModelsGroup.classList.remove("hidden");
-        
-        elements.ollamaConfigGroup.classList.add("hidden");
-        elements.ollamaModelsGroup.classList.add("hidden");
-        elements.ollamaPullInstructions.classList.add("hidden");
+    } else if (val === "cohere") {
+        elements.cohereConfigGroup.classList.remove("hidden");
+        elements.cohereModelsGroup.classList.remove("hidden");
     } else {
-        elements.geminiConfigGroup.classList.add("hidden");
-        elements.geminiModelsGroup.classList.add("hidden");
-        
         elements.ollamaConfigGroup.classList.remove("hidden");
         elements.ollamaModelsGroup.classList.remove("hidden");
-        
         // Fetch local Ollama models list
         fetchOllamaModels();
     }
     
-    // Clear chat messages to avoid mixing context between Gemini and Ollama
+    // Clear chat messages to avoid mixing context between providers
     clearChat();
 }
 
@@ -295,6 +305,34 @@ function setupEventListeners() {
         }
     });
     
+    // 1b. Save Key Action (Cohere only)
+    elements.saveCohereKeyBtn.addEventListener("click", async () => {
+        const key = elements.cohereApiKeyInput.value.trim();
+        if (!key) {
+            alert("Please enter a valid Cohere API Key.");
+            return;
+        }
+        
+        showOverlay("Configuring System...", "Saving API Key and initializing Cohere configurations.");
+        try {
+            const response = await fetch(`${API_BASE}/api/configure-cohere-key`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ api_key: key })
+            });
+            
+            if (!response.ok) throw new Error("Failed to configure key.");
+            
+            alert("Cohere API Key configured successfully.");
+            elements.cohereApiKeyInput.value = "";
+            await checkSystemStatus();
+        } catch (err) {
+            alert(`Error configuring API Key: ${err.message}`);
+        } finally {
+            hideOverlay();
+        }
+    });
+    
     // 2. PDF Ingestion Action
     elements.ingestBtn.addEventListener("click", async () => {
         if (!appState.selectedFile) {
@@ -391,7 +429,7 @@ function setupEventListeners() {
         const query = elements.chatInput.value.trim();
         if (!query) return;
         
-        elements.chatInput.value = "";
+            elements.chatInput.value = "";
         await processUserQuery(query);
     });
 }
@@ -404,7 +442,12 @@ async function checkSystemStatus() {
         
         const status = await response.json();
         
-        appState.apiKeyConfigured = status.api_key_configured;
+        if (appState.provider === "gemini") {
+            appState.apiKeyConfigured = status.api_key_configured;
+        } else if (appState.provider === "cohere") {
+            appState.cohereKeyConfigured = status.api_key_configured;
+        }
+        
         appState.ollamaActive = status.ollama_active;
         appState.indexReady = status.index_ready;
         appState.indexedChunks = status.indexed_chunks;
@@ -442,6 +485,26 @@ async function checkSystemStatus() {
                 elements.chatInput.disabled = true;
                 elements.sendBtn.disabled = true;
                 elements.chatInput.placeholder = "⚠️ Save a valid Gemini API Key in the sidebar first...";
+            }
+        } else if (appState.provider === "cohere") {
+            if (status.api_key_configured) {
+                elements.ingestBtn.disabled = !appState.selectedFile;
+                elements.cohereApiKeyInput.placeholder = "•••••••••••••••••••••••• (API Key Active)";
+                
+                if (status.index_ready) {
+                    elements.chatInput.disabled = false;
+                    elements.sendBtn.disabled = false;
+                    elements.chatInput.placeholder = "Cohere Cloud Auditor is active. Ask any question...";
+                } else {
+                    elements.chatInput.disabled = true;
+                    elements.sendBtn.disabled = true;
+                    elements.chatInput.placeholder = "⚠️ Complete PDF Ingestion in the sidebar first...";
+                }
+            } else {
+                elements.ingestBtn.disabled = true;
+                elements.chatInput.disabled = true;
+                elements.sendBtn.disabled = true;
+                elements.chatInput.placeholder = "⚠️ Save a valid Cohere API Key in the sidebar first...";
             }
         } else {
             // Ollama Mode
@@ -513,7 +576,8 @@ async function processUserQuery(queryText) {
             temperature: temperature,
             provider: appState.provider,
             ollama_model: elements.ollamaModelSelect.value || "llama3",
-            gemini_model: elements.modelSelect.value || "gemini-2.5-flash"
+            gemini_model: elements.modelSelect.value || "gemini-2.5-flash",
+            cohere_model: elements.cohereModelSelect.value || "command-r"
         };
         
         // Call Backend API

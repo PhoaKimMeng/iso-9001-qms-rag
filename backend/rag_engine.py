@@ -194,8 +194,54 @@ class RAGEngine:
         self.vector_store = VectorStore()
         
         # Isolate database file names by provider to prevent matrix shape conflicts!
-        self.index_name = "vector_store_gemini.json" if self.provider == "gemini" else "vector_store_ollama.json"
+        if self.provider == "gemini":
+            self.index_name = "vector_store_gemini.json"
+        elif self.provider == "cohere":
+            self.index_name = "vector_store_cohere.json"
+        else:
+            self.index_name = "vector_store_ollama.json"
         self.index_file = os.path.join(os.path.dirname(__file__), self.index_name)
+
+    def _get_embeddings_cohere(self, texts: List[str], input_type: str = "search_document") -> List[List[float]]:
+        """Invokes the Cohere embeddings REST service (embed-english-v3.0)."""
+        url = "https://api.cohere.com/v1/embed"
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json"
+        }
+        payload = {
+            "texts": texts,
+            "model": "embed-english-v3.0",
+            "input_type": input_type
+        }
+        try:
+            response = requests.post(url, json=payload, headers=headers, timeout=90)
+            response.raise_for_status()
+            data = response.json()
+            return data["embeddings"]
+        except Exception as e:
+            raise RuntimeError(f"Cohere embedding failed: {e}")
+
+    def _query_cohere(self, prompt: str, system_instruction: str, model_name: str, temperature: float) -> str:
+        """Invokes the Cohere chat REST service (v1/chat)."""
+        url = "https://api.cohere.com/v1/chat"
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json"
+        }
+        payload = {
+            "message": prompt,
+            "model": model_name,
+            "preamble": system_instruction,
+            "temperature": temperature
+        }
+        try:
+            response = requests.post(url, json=payload, headers=headers, timeout=300)
+            response.raise_for_status()
+            data = response.json()
+            return data["text"]
+        except Exception as e:
+            raise RuntimeError(f"Cohere chat generation failed: {e}")
 
     def _get_embeddings_ollama(self, texts: List[str]) -> List[List[float]]:
         """Invokes the local Ollama embeddings REST service (nomic-embed-text)."""
@@ -277,6 +323,14 @@ class RAGEngine:
                     task_type="retrieval_document"
                 )
                 embeddings.extend(response["embedding"])
+        elif self.provider == "cohere":
+            # Generate Cohere Embeddings
+            batch_size = 90
+            for i in range(0, len(chunks), batch_size):
+                batch = chunks[i:i+batch_size]
+                texts = [c["text"] for c in batch]
+                batch_embeddings = self._get_embeddings_cohere(texts, input_type="search_document")
+                embeddings.extend(batch_embeddings)
         else:
             # Generate Ollama Local Embeddings
             texts = [c["text"] for c in chunks]
@@ -288,7 +342,7 @@ class RAGEngine:
         
         return len(chunks), False
 
-    def query(self, user_query: str, top_k: int = 5, temperature: float = 0.2, ollama_model: str = "llama3", gemini_model: str = "gemini-2.5-flash") -> Dict[str, Any]:
+    def query(self, user_query: str, top_k: int = 5, temperature: float = 0.2, ollama_model: str = "llama3", gemini_model: str = "gemini-2.5-flash", cohere_model: str = "command-r") -> Dict[str, Any]:
         """
         Runs the RAG query:
         1. Embeds the user query (Gemini or Ollama).
@@ -307,6 +361,8 @@ class RAGEngine:
                 task_type="retrieval_query"
             )
             query_embedding = query_resp["embedding"]
+        elif self.provider == "cohere":
+            query_embedding = self._get_embeddings_cohere([user_query], input_type="search_query")[0]
         else:
             query_embedding = self._get_embeddings_ollama([user_query])[0]
         
@@ -355,6 +411,13 @@ class RAGEngine:
                 generation_config={"temperature": temperature}
             )
             answer_text = response.text
+        elif self.provider == "cohere":
+            answer_text = self._query_cohere(
+                prompt=prompt,
+                system_instruction=system_instruction,
+                model_name=cohere_model,
+                temperature=temperature
+            )
         else:
             answer_text = self._query_ollama(
                 prompt=prompt,

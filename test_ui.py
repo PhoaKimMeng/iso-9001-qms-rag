@@ -75,7 +75,9 @@ def run_test():
                 "provider-select", "api-key-input", "save-key-btn", "pdf-file-input", 
                 "ingest-btn", "chat-messages", "chat-form", "chat-input", "send-btn", 
                 "clauses-accordion-container", "diagnostics-ready-content", 
-                "diagnostics-empty-content", "chunk-inspector-slider", "loading-overlay"
+                "diagnostics-empty-content", "chunk-inspector-slider", "loading-overlay",
+                "cohere-config-group", "cohere-api-key-input", "save-cohere-key-btn",
+                "cohere-models-group", "cohere-model-select"
             ]
             
             missing_ids = [rid for rid in required_ids if rid not in parser.found_ids]
@@ -131,13 +133,28 @@ def run_test():
 
     # --- TEST 6: Backend Status Payload & Connectivity Schema ---
     if status_json:
-        required_keys = ["api_key_configured", "ollama_active", "index_ready", "indexed_chunks"]
-        missing_keys = [k for k in required_keys if k not in status_json]
-        if not missing_keys:
-            details = f"Gemini Key: {status_json['api_key_configured']}, Ollama: {status_json['ollama_active']}, Index: {status_json['index_ready']} ({status_json['indexed_chunks']} chunks)"
-            print_result("Backend /api/status Validation", True, details)
-        else:
-            print_result("Backend /api/status Validation", False, f"Missing expected keys: {missing_keys}")
+        try:
+            # Query Gemini status
+            gemini_status_url = f"{BACKEND_URL}/api/status?provider=gemini"
+            with urllib.request.urlopen(gemini_status_url, timeout=5) as g_resp:
+                gemini_status = json.loads(g_resp.read().decode('utf-8'))
+            
+            # Query Cohere status
+            cohere_status_url = f"{BACKEND_URL}/api/status?provider=cohere"
+            with urllib.request.urlopen(cohere_status_url, timeout=5) as c_resp:
+                cohere_status = json.loads(c_resp.read().decode('utf-8'))
+                
+            required_keys = ["api_key_configured", "ollama_active", "index_ready", "indexed_chunks"]
+            missing_g = [k for k in required_keys if k not in gemini_status]
+            missing_c = [k for k in required_keys if k not in cohere_status]
+            
+            if not missing_g and not missing_c:
+                details = f"Gemini Key Configured: {gemini_status['api_key_configured']}, Cohere Key Configured: {cohere_status['api_key_configured']}, Ollama Connected: {gemini_status['ollama_active']}"
+                print_result("Backend /api/status Validation", True, details)
+            else:
+                print_result("Backend /api/status Validation", False, f"Missing keys - Gemini: {missing_g}, Cohere: {missing_c}")
+        except Exception as e:
+            print_result("Backend /api/status Validation", False, f"Failed querying status providers: {e}")
     else:
         print_result("Backend /api/status Validation", False, "Skipped due to unreachable API")
 
